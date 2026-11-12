@@ -8,7 +8,7 @@ Operational contract for an AI agent working on `todo_md`.
 
 - `todo_md` — standalone executable Python 3 CLI (zero external dependencies; supports Python 3.9+ on Linux, macOS, and Windows).
 - `.run_block.start` — declarative bundle specification for `run_block --start`.
-- `VERSION` — single-line semantic version string (`0.1.0`), must match `VERSION` inside `todo_md`.
+- `VERSION` — single-line semantic version string (`0.1.1`), must match `VERSION` inside `todo_md`.
 - `install.sh` — POSIX shell installer for Linux and macOS.
 - `install.ps1` — PowerShell 7+ installer for Windows.
 - `tests/test_todo_md.py` — unit test suite (`unittest`, no network required).
@@ -29,4 +29,5 @@ Operational contract for an AI agent working on `todo_md`.
   ```bash
   sh install.sh --yes >/dev/null
   ```
-- **Git identity and releases:** Commits use `Vitaly <2vitalio@gmail.com>` and push to `origin main` (`git@github.com-2vitalio:vitalio/todo_md.git`).
+- **Versioning and release tags on every CLI/installer change:** Whenever `todo_md`, `install.sh`, or `install.ps1` is modified, bump the version in both `VERSION` and `VERSION = "..."` inside `todo_md` (and `AGENTS.md`), reinstall locally (`sh install.sh --yes >/dev/null`), commit, push `origin main`, and push an annotated release tag (`git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`) so `todo_md update` / `check-update` and GitHub Releases always stay up to date.
+- **Git identity:** Commits use `Vitaly <2vitalio@gmail.com>` and push to `origin main` (`git@github.com-2vitalio:vitalio/todo_md.git`).
