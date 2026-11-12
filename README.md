@@ -26,9 +26,10 @@ irm https://raw.githubusercontent.com/vitalio/todo_md/main/install.ps1 | iex
 Add `todo_md` to your project's `.run_block.start`:
 
 ```text
+$ run_block --agents
+
 AGENTS.md
 
-$ run_block --agents
 $ todo_md --agents
 $ todo_md
 $ git status -sb
