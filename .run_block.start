@@ -1,0 +1,9 @@
+# .run_block.start — session context bundle specification for 'run_block --start'
+AGENTS.md
+
+$ run_block --agents
+$ todo_md agents
+$ todo_md
+$ git status -sb
+$ git branch -vv
+$ git log --oneline -10

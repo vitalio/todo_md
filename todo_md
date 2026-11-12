@@ -1,0 +1,676 @@
+#!/usr/bin/env python3
+# todo_md-repo: vitalio/todo_md
+"""Usage:
+  {prog} [dir]                       Print operational summary (TODO.md + IDs in use + plan/archive counts)
+  {prog} <ID>                        Show full section for task <ID> across TODO*.md (e.g. {prog} F1)
+  {prog} list [filter]               List tasks as a compact table (active | plan | archive | all | <STATUS>)
+  {prog} plan                        Print operational summary plus full TODO_PLAN.md
+  {prog} archive [<ID>] [-m NOTE]    Print TODO_ARCHIVE.md, or move task <ID> to TODO_ARCHIVE.md
+  {prog} done <ID> [-m NOTE]         Mark task <ID> as DONE and move it to TODO_ARCHIVE.md
+  {prog} cancel <ID> [-m REASON]     Mark task <ID> as CANCELED and move it to TODO_ARCHIVE.md
+  {prog} status <ID> <STATUS> [-m N] Update status of <ID> (NEW|WIP|HOLD|QUESTION|DONE|CANCELED)
+  {prog} activate <ID> [--wip]       Move task <ID> from TODO_PLAN.md into active TODO.md
+  {prog} defer <ID>                  Move task <ID> from active TODO.md into TODO_PLAN.md
+  {prog} show <ID>                   Show full section for task <ID>
+  {prog} ids                         Print highest task IDs in use and next available ID per letter prefix
+  {prog} check                       Validate task headings, status badges, and unique IDs across TODO*.md
+  {prog} init [--force]              Create starter TODO.md, TODO_PLAN.md, and TODO_ARCHIVE.md in current dir
+  {prog} agents                      Print Markdown instructions for AI agents (for run_block --start)
+  {prog} update [--force]            Self-update {prog} from GitHub (vitalio/todo_md)
+  {prog} check-update                Check if a newer version is available on GitHub
+  {prog} -V | --version              Print version and exit 0
+  {prog} -h | --help                 Print this usage and exit 0
+
+Manages structured Markdown task files in a repository:
+  - TODO.md          Operational state (Resume) and immediate/active tasks
+  - TODO_PLAN.md     Deferred/future tasks and open design questions
+  - TODO_ARCHIVE.md  Completed (DONE) and dropped (CANCELED) tasks and historical snapshots
+
+Environment variables:
+  TODO_MD_CWD          Override target directory (default: current directory or Git root)
+  TODO_MD_UPDATE_URL   Override raw script URL for update / check-update
+"""
+from __future__ import annotations
+
+if __doc__ is None:
+    raise SystemExit("missing usage documentation")
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.request
+from datetime import date
+from pathlib import Path
+
+VERSION = "0.1.0"
+REPO_MARKER = "todo_md-repo: vitalio/todo_md"
+DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
+FENCE = chr(96) * 3
+
+VALID_STATUSES: dict[str, str] = {
+    "NEW": "⚪",
+    "WIP": "🔵",
+    "HOLD": "⏸️",
+    "QUESTION": "❓",
+    "DONE": "✅",
+    "CANCELED": "❌",
+}
+
+TASK_FILES = ("TODO.md", "TODO_PLAN.md", "TODO_ARCHIVE.md")
+
+# Matches canonical task headings: ### ⚪ [NEW] F1: Title
+HEADING_RE = re.compile(
+    r"^###\s+(⚪|🔵|⏸️?|❓|✅|❌)\s+`?\[(NEW|WIP|HOLD|QUESTION|DONE|CANCELED)\]`?\s+([A-Z]\d+)\s*:\s*(.+?)\s*$"
+)
+# Broader pattern to detect any task ID in headings or checklists so no ID is ever reused
+STATUS_TOKEN_PAT = r"(?:(?:⚪|🔵|⏸️?|❓|✅|❌)\s+)?`?\[(?:NEW|WIP|HOLD|QUESTION|DONE|CANCELED)\]`?"
+ANY_ID_RE = re.compile(
+    rf"^(?:###\s+(?:{STATUS_TOKEN_PAT}\s+|[-*o?+c]\s+)?|(?:- \[[ xX~]\]\s+(?:{STATUS_TOKEN_PAT}\s+)?|- |[*o?+c] ))([A-Z]\d+)\b"
+)
+
+
+def prog_name() -> str:
+    raw = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else "todo_md"
+    for suf in (".py", ".cmd", ".bat", ".exe"):
+        if raw.lower().endswith(suf) and len(raw) > len(suf):
+            raw = raw[:-len(suf)]
+            break
+    return raw or "todo_md"
+
+
+def usage_text() -> str:
+    return (__doc__ or "").format(prog=prog_name())
+
+
+def resolve_target_dir(explicit: str | None = None) -> Path:
+    if explicit:
+        p = Path(explicit).expanduser().resolve()
+        if not p.is_dir():
+            raise SystemExit(f"{prog_name()}: directory not found: {explicit}")
+        return p
+    env_cwd = os.environ.get("TODO_MD_CWD", "").strip()
+    if env_cwd:
+        return Path(env_cwd).expanduser().resolve()
+    cwd = Path.cwd().resolve()
+    if (cwd / "TODO.md").is_file():
+        return cwd
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            groot = Path(r.stdout.strip()).resolve()
+            if (groot / "TODO.md").is_file():
+                return groot
+    except OSError:
+        pass
+    return cwd
+
+
+def read_if_exists(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+
+
+def parse_tasks_in_text(text: str, filename: str) -> list[dict[str, object]]:
+    tasks: list[dict[str, object]] = []
+    in_fence = False
+    current: dict[str, object] | None = None
+    body_lines: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if line.lstrip().startswith(FENCE):
+            in_fence = not in_fence
+        if not in_fence:
+            if line.startswith("### ") or line.startswith("## "):
+                if current is not None:
+                    current["section"] = "\n".join(body_lines).rstrip()
+                    tasks.append(current)
+                    current = None
+                    body_lines = []
+                if line.startswith("### "):
+                    m = HEADING_RE.match(line)
+                    if m:
+                        emoji, status, tid, title = m.groups()
+                        current = {
+                            "id": tid,
+                            "status": status,
+                            "emoji": emoji,
+                            "title": title,
+                            "file": filename,
+                            "line": lineno,
+                            "heading": line,
+                        }
+                        body_lines = [line]
+                        continue
+        if current is not None:
+            body_lines.append(line)
+    if current is not None:
+        current["section"] = "\n".join(body_lines).rstrip()
+        tasks.append(current)
+    return tasks
+
+
+def collect_all_tasks(base_dir: Path) -> list[dict[str, object]]:
+    all_tasks: list[dict[str, object]] = []
+    for fname in TASK_FILES:
+        p = base_dir / fname
+        if p.is_file():
+            all_tasks.extend(parse_tasks_in_text(read_if_exists(p), fname))
+    return all_tasks
+
+
+def highest_ids_in_use(base_dir: Path) -> dict[str, int]:
+    top: dict[str, int] = {}
+    for fname in TASK_FILES:
+        text = read_if_exists(base_dir / fname)
+        if not text:
+            continue
+        in_fence = False
+        for line in text.splitlines():
+            if line.lstrip().startswith(FENCE):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            m = ANY_ID_RE.match(line)
+            if m:
+                ident = m.group(1)
+                prefix, num = ident[0], int(ident[1:])
+                top[prefix] = max(top.get(prefix, 0), num)
+    return top
+
+
+def format_ids_summary(top: dict[str, int]) -> str:
+    if not top:
+        return "[none]"
+    used = " ".join(f"{k}:{v}" for k, v in sorted(top.items()))
+    nxt = ", ".join(f"{k}{v + 1}" for k, v in sorted(top.items()))
+    return f"{used}  (next free: {nxt})"
+
+
+def cmd_summary(base_dir: Path, include_plan: bool = False) -> int:
+    todo_path = base_dir / "TODO.md"
+    if not todo_path.is_file():
+        sys.stderr.write(f"{prog_name()}: no TODO.md found in {base_dir} (run '{prog_name()} init' to create one)\n")
+        return 1
+    todo_text = read_if_exists(todo_path).rstrip()
+    sys.stdout.write(todo_text + "\n\n")
+    top = highest_ids_in_use(base_dir)
+    plan_tasks = parse_tasks_in_text(read_if_exists(base_dir / "TODO_PLAN.md"), "TODO_PLAN.md")
+    arch_tasks = parse_tasks_in_text(read_if_exists(base_dir / "TODO_ARCHIVE.md"), "TODO_ARCHIVE.md")
+    sys.stdout.write("---\n")
+    sys.stdout.write(f"IDs in use: {format_ids_summary(top)}\n")
+    sys.stdout.write(f"Deferred in TODO_PLAN.md: {len(plan_tasks)} task(s) | Archived in TODO_ARCHIVE.md: {len(arch_tasks)} task(s)\n")
+    if include_plan and (base_dir / "TODO_PLAN.md").is_file():
+        plan_text = read_if_exists(base_dir / "TODO_PLAN.md").rstrip()
+        sys.stdout.write(f"\n===== TODO_PLAN.md =====\n{plan_text}\n")
+    return 0
+
+
+def cmd_ids(base_dir: Path) -> int:
+    top = highest_ids_in_use(base_dir)
+    sys.stdout.write(f"IDs in use: {format_ids_summary(top)}\n")
+    return 0
+
+
+def cmd_show(base_dir: Path, task_id: str) -> int:
+    target = task_id.strip().upper()
+    for t in collect_all_tasks(base_dir):
+        if str(t["id"]).upper() == target:
+            sys.stdout.write(f"# {t['file']}:{t['line']}\n{t['section']}\n")
+            return 0
+    sys.stderr.write(f"{prog_name()}: task {target!r} not found in TODO*.md under {base_dir}\n")
+    return 1
+
+
+def cmd_list(base_dir: Path, filt: str | None = None) -> int:
+    mode = (filt or "active").strip().lower()
+    tasks = collect_all_tasks(base_dir)
+    if mode == "active":
+        shown = [t for t in tasks if t["file"] == "TODO.md"]
+    elif mode == "plan":
+        shown = [t for t in tasks if t["file"] == "TODO_PLAN.md"]
+    elif mode == "archive":
+        shown = [t for t in tasks if t["file"] == "TODO_ARCHIVE.md"]
+    elif mode == "all":
+        shown = tasks
+    elif mode.upper() in VALID_STATUSES:
+        shown = [t for t in tasks if t["status"] == mode.upper()]
+    else:
+        raise SystemExit(f"{prog_name()}: unknown list filter {filt!r}; expected active, plan, archive, all, or a status name")
+
+    if not shown:
+        sys.stdout.write(f"No matching tasks ({mode}) in {base_dir}\n")
+    else:
+        for t in shown:
+            badge = f"{t['emoji']} [{t['status']}]"
+            loc = str(t["file"])
+            sys.stdout.write(f"  {str(t['id']):<6}  {badge:<14}  {loc:<16}  {t['title']}\n")
+    top = highest_ids_in_use(base_dir)
+    sys.stdout.write(f"\nIDs in use: {format_ids_summary(top)}\n")
+    return 0
+
+
+def cmd_check(base_dir: Path) -> int:
+    errors: list[str] = []
+    seen_ids: dict[str, str] = {}
+    has_archive = (base_dir / "TODO_ARCHIVE.md").is_file()
+    for fname in TASK_FILES:
+        p = base_dir / fname
+        if not p.is_file():
+            continue
+        text = read_if_exists(p)
+        in_fence = False
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith(FENCE):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if line.startswith("### "):
+                m = HEADING_RE.match(line)
+                if not m:
+                    errors.append(f"{fname}:{lineno}: invalid task heading format: {line}")
+                    continue
+                emoji, status, tid, _ = m.groups()
+                norm_emoji = "⏸️" if emoji.startswith("⏸") else emoji
+                if VALID_STATUSES.get(status) != norm_emoji:
+                    errors.append(f"{fname}:{lineno}: mismatched emoji {emoji} for status [{status}]")
+                loc = f"{fname}:{lineno}"
+                if tid in seen_ids:
+                    errors.append(f"{loc}: duplicate task ID {tid} (first seen at {seen_ids[tid]})")
+                else:
+                    seen_ids[tid] = loc
+                if fname == "TODO.md" and has_archive and status in ("DONE", "CANCELED"):
+                    errors.append(f"{loc}: {status} task {tid} should be moved from TODO.md to TODO_ARCHIVE.md")
+    if errors:
+        for e in errors:
+            sys.stderr.write(f"ERROR: {e}\n")
+        return 1
+    sys.stdout.write(f"{prog_name()}: OK ({len(seen_ids)} task(s) verified across TODO*.md)\n")
+    return 0
+
+
+def cmd_init(base_dir: Path, force: bool = False) -> int:
+    today = date.today().isoformat()
+    templates = {
+        "TODO.md": "\n".join([
+            "# Project — active tasks and operational state",
+            "",
+            "[README.md](README.md) documents usage; [AGENTS.md](AGENTS.md) sets the rules",
+            "for an AI agent. Deferred tasks live in [TODO_PLAN.md](TODO_PLAN.md);",
+            "completed and canceled records live in [TODO_ARCHIVE.md](TODO_ARCHIVE.md).",
+            "",
+            "Task heading format: `### <emoji> [<STATUS>] <ID>: <title>`",
+            "(`⚪ [NEW]`, `🔵 [WIP]`, `⏸️ [HOLD]`, `❓ [QUESTION]`, `✅ [DONE]`, `❌ [CANCELED]`).",
+            "",
+            "## Resume",
+            "",
+            f"Written {today}. Initialized TODO structure.",
+            "",
+            "## Tasks",
+            "",
+            "### ⚪ [NEW] F1: Initial task",
+            "",
+            "Describe the goal and acceptance criteria.",
+            "",
+        ]),
+        "TODO_PLAN.md": "\n".join([
+            "# Project — deferred tasks and future roadmap",
+            "",
+            "Active operational tasks live in [TODO.md](TODO.md); completed and canceled",
+            "records live in [TODO_ARCHIVE.md](TODO_ARCHIVE.md).",
+            "",
+            "## Deferred Tasks",
+            "",
+        ]),
+        "TODO_ARCHIVE.md": "\n".join([
+            "# Project — archived tasks (DONE and CANCELED)",
+            "",
+            "Active operational tasks live in [TODO.md](TODO.md); deferred tasks live in",
+            "[TODO_PLAN.md](TODO_PLAN.md).",
+            "",
+            "## Archive",
+            "",
+        ]),
+    }
+    created: list[str] = []
+    for fname, content in templates.items():
+        p = base_dir / fname
+        if p.exists() and not force:
+            continue
+        p.write_text(content, encoding="utf-8")
+        created.append(fname)
+    if not created:
+        sys.stdout.write(f"{prog_name()}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
+    else:
+        sys.stdout.write(f"{prog_name()}: initialized {', '.join(created)} in {base_dir}\n")
+    return 0
+
+
+def agents_markdown(prog: str | None = None) -> str:
+    cmd = prog or prog_name()
+    lines = [
+        f"## Task management (`{cmd}` v{VERSION}: `TODO.md`, `TODO_PLAN.md`, `TODO_ARCHIVE.md`)",
+        "",
+        "### 1. Starting and ending a session (`Resume`)",
+        "",
+        "- Read `Resume` in [TODO.md](TODO.md) first and reconcile it with the current Git state.",
+        "  **Git beats Resume:** on any mismatch, state it first and propose the `Resume` fix.",
+        "- At the end of a task or session, update `Resume` in [TODO.md](TODO.md) with today's ISO date (`YYYY-MM-DD`),",
+        "  what was completed (with commit SHAs), and the exact next step so nothing needed to continue stays only in chat.",
+        "",
+        "### 2. Three-file task structure",
+        "",
+        "- **[TODO.md](TODO.md)** — operational context (`Resume`) and **current / immediate** tasks only (keep the active queue small and focused).",
+        "- **[TODO_PLAN.md](TODO_PLAN.md)** — deferred or future tasks and open design questions. Move tasks from `TODO_PLAN.md` to `TODO.md` when selected for work.",
+        "- **[TODO_ARCHIVE.md](TODO_ARCHIVE.md)** — completed (`✅ [DONE]`) and canceled (`❌ [CANCELED]`) tasks with verification references (commit SHA, PR/MR).",
+        "",
+        "### 3. Task heading grammar and 6 statuses",
+        "",
+        "Every task section starts with:",
+        "`### <emoji> [<STATUS>] <ID>: <title> (— *<reason/context if applicable>*)`",
+        "",
+        "Use **only** one of the 6 predefined statuses:",
+        "1. `⚪ [NEW]` — Planned, not started yet, no blockers (`### ⚪ [NEW] F1: Title`).",
+        "2. `🔵 [WIP]` — Actively being worked on right now (`### 🔵 [WIP] F1: Title`).",
+        "3. `⏸️ [HOLD]` — Paused waiting for an external dependency or validation (`### ⏸️ [HOLD] F1: Title — *waiting for ...*`).",
+        "4. `❓ [QUESTION]` — Blocked on a human decision or clarification (`### ❓ [QUESTION] F1: Title — *need to clarify ...*`).",
+        "5. `✅ [DONE]` — Fully completed and verified; move from `TODO.md` to `TODO_ARCHIVE.md` in the completion commit.",
+        "6. `❌ [CANCELED]` — Dropped or rejected; move from `TODO.md` to `TODO_ARCHIVE.md` (`### ❌ [CANCELED] F1: Title — *reason*`).",
+        "",
+        f"- **Never reuse a task `<ID>`:** Check `IDs in use` (or run `{cmd} ids`) across all `TODO*.md` files before assigning a new `<ID>`.",
+        f"- **CLI helpers:** `{cmd}` (operational summary), `{cmd} <ID>` (show task), `{cmd} list [active|plan|archive|all|<STATUS>]` (list tasks), `{cmd} plan` (show TODO_PLAN.md), `{cmd} archive` (show TODO_ARCHIVE.md), `{cmd} done <ID> [-m SHA]` (mark DONE & move to TODO_ARCHIVE.md), `{cmd} cancel <ID> [-m reason]` (mark CANCELED & move to TODO_ARCHIVE.md), `{cmd} status <ID> <STATUS> [-m note]`, `{cmd} activate <ID>`, `{cmd} defer <ID>`, `{cmd} check` (validate structure and unique IDs).",
+    ]
+    return "\n".join(lines)
+
+
+def parse_version_from_source(source: str) -> str | None:
+    m = re.search(r'^VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]', source, flags=re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in re.split(r"[^0-9]+", v) if p)
+
+
+def fetch_remote_script(url: str | None = None) -> str:
+    target_url = url or os.environ.get("TODO_MD_UPDATE_URL") or DEFAULT_UPDATE_URL
+    req = urllib.request.Request(target_url, headers={"User-Agent": f"todo_md/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = resp.read().decode("utf-8")
+    if REPO_MARKER not in data:
+        raise ValueError(f"remote file at {target_url} is not a valid vitalio/todo_md script")
+    return data
+
+
+def cmd_check_update(url: str | None = None) -> int:
+    prog = prog_name()
+    try:
+        remote_src = fetch_remote_script(url)
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: failed to check for updates: {exc}\n")
+        return 1
+    remote_ver = parse_version_from_source(remote_src) or "unknown"
+    if version_tuple(remote_ver) > version_tuple(VERSION):
+        sys.stdout.write(f"{prog}: update available: {VERSION} -> {remote_ver} (run '{prog} update')\n")
+    else:
+        sys.stdout.write(f"{prog} {VERSION} is up to date (remote: {remote_ver}).\n")
+    return 0
+
+
+def cmd_update(force: bool = False, url: str | None = None, target_path: Path | None = None) -> int:
+    prog = prog_name()
+    dest = target_path or Path(__file__).resolve()
+    try:
+        remote_src = fetch_remote_script(url)
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: update failed: {exc}\n")
+        return 1
+    remote_ver = parse_version_from_source(remote_src) or "unknown"
+    if not force and version_tuple(remote_ver) <= version_tuple(VERSION):
+        sys.stdout.write(f"{prog} {VERSION} is already up to date.\n")
+        return 0
+    try:
+        tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=str(dest.parent))
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(remote_src)
+            os.chmod(tmp_name, 0o755)
+            os.replace(tmp_name, dest)
+        except Exception:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+            raise
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: could not write updated binary to {dest}: {exc}\n")
+        return 1
+    sys.stdout.write(f"{prog}: updated {VERSION} -> {remote_ver} ({dest})\n\n")
+    sys.stdout.write(f"=== Updated AI Agent Instructions ({prog} v{remote_ver}) ===\n\n")
+    sys.stdout.flush()
+    subprocess.run([str(dest), "agents"], check=False)
+    return 0
+
+
+def _extract_and_remove_task(text: str, target_id: str) -> tuple[dict[str, object] | None, str]:
+    lines = text.splitlines()
+    in_fence = False
+    start_idx: int | None = None
+    end_idx: int | None = None
+    found_info: dict[str, object] | None = None
+    for idx, line in enumerate(lines):
+        if line.lstrip().startswith(FENCE):
+            in_fence = not in_fence
+        if not in_fence:
+            if start_idx is not None and (line.startswith("### ") or line.startswith("## ")):
+                end_idx = idx
+                break
+            if start_idx is None and line.startswith("### "):
+                m = HEADING_RE.match(line)
+                if m and m.group(3).upper() == target_id:
+                    emoji, status, tid, title = m.groups()
+                    start_idx = idx
+                    found_info = {"id": tid, "status": status, "emoji": emoji, "title": title}
+    if start_idx is None or found_info is None:
+        return None, text
+    if end_idx is None:
+        end_idx = len(lines)
+    section_lines = lines[start_idx:end_idx]
+    while section_lines and not section_lines[-1].strip():
+        section_lines.pop()
+    found_info["lines"] = section_lines
+    remaining = lines[:start_idx] + lines[end_idx:]
+    new_text = re.sub(r"\n{3,}", "\n\n", "\n".join(remaining).rstrip()) + "\n"
+    return found_info, new_text
+
+
+def _format_heading(status: str, tid: str, title: str, note: str | None = None) -> str:
+    emoji = VALID_STATUSES[status]
+    clean_title = title.strip()
+    if note:
+        clean_title = re.sub(r"\s+—\s+\*.*\*\s*$", "", clean_title)
+        clean_title = f"{clean_title} — *{note.strip()}*"
+    return f"### {emoji} [{status}] {tid}: {clean_title}"
+
+
+def _append_task_section(file_path: Path, section_lines: list[str], default_header: str) -> None:
+    if not file_path.is_file():
+        file_path.write_text(default_header + "\n\n" + "\n".join(section_lines) + "\n", encoding="utf-8")
+        return
+    existing = file_path.read_text(encoding="utf-8").rstrip()
+    file_path.write_text(existing + "\n\n" + "\n".join(section_lines) + "\n", encoding="utf-8")
+
+
+def _parse_note_arg(rest: list[str]) -> tuple[list[str], str | None]:
+    pos: list[str] = []
+    note: str | None = None
+    i = 0
+    while i < len(rest):
+        if rest[i] in ("-m", "--note", "--reason"):
+            if i + 1 >= len(rest):
+                raise SystemExit(f"{prog_name()}: {rest[i]} requires an argument")
+            note = rest[i + 1]
+            i += 2
+        else:
+            pos.append(rest[i])
+            i += 1
+    return pos, note
+
+
+def cmd_archive_view(base_dir: Path) -> int:
+    arch_path = base_dir / "TODO_ARCHIVE.md"
+    if not arch_path.is_file():
+        sys.stderr.write(f"{prog_name()}: no TODO_ARCHIVE.md found in {base_dir}\n")
+        return 1
+    sys.stdout.write(read_if_exists(arch_path).rstrip() + "\n")
+    return 0
+
+
+def cmd_transition(
+    base_dir: Path,
+    task_id: str,
+    new_status: str | None = None,
+    dest_file: str | None = None,
+    note: str | None = None,
+) -> int:
+    target = task_id.strip().upper()
+    if new_status and new_status not in VALID_STATUSES:
+        raise SystemExit(f"{prog_name()}: invalid status {new_status!r}; expected one of {', '.join(VALID_STATUSES)}")
+    source_file: str | None = None
+    found: dict[str, object] | None = None
+    updated_source_text = ""
+    for fname in TASK_FILES:
+        p = base_dir / fname
+        if not p.is_file():
+            continue
+        info, rem = _extract_and_remove_task(read_if_exists(p), target)
+        if info is not None:
+            source_file = fname
+            found = info
+            updated_source_text = rem
+            break
+    if found is None or source_file is None:
+        sys.stderr.write(f"{prog_name()}: task {target!r} not found in TODO*.md under {base_dir}\n")
+        return 1
+
+    final_status = new_status or str(found["status"])
+    if dest_file is None:
+        if final_status in ("DONE", "CANCELED"):
+            dest_file = "TODO_ARCHIVE.md"
+        else:
+            dest_file = source_file
+
+    sec_lines = list(found["lines"])  # type: ignore[arg-type]
+    sec_lines[0] = _format_heading(final_status, str(found["id"]), str(found["title"]), note=note)
+
+    if dest_file == source_file:
+        src_path = base_dir / source_file
+        orig_lines = read_if_exists(src_path).splitlines()
+        in_fence = False
+        for idx, line in enumerate(orig_lines):
+            if line.lstrip().startswith(FENCE):
+                in_fence = not in_fence
+            if not in_fence and line.startswith("### "):
+                m = HEADING_RE.match(line)
+                if m and m.group(3).upper() == target:
+                    orig_lines[idx] = sec_lines[0]
+                    break
+        src_path.write_text("\n".join(orig_lines) + "\n", encoding="utf-8")
+        sys.stdout.write(f"{prog_name()}: updated {target} -> [{final_status}] in {source_file}\n")
+        return 0
+
+    (base_dir / source_file).write_text(updated_source_text, encoding="utf-8")
+    default_hdrs = {
+        "TODO.md": "# Project — active tasks and operational state\n\n## Tasks",
+        "TODO_PLAN.md": "# Project — deferred tasks and future roadmap\n\n## Deferred Tasks",
+        "TODO_ARCHIVE.md": "# Project — archived tasks (DONE and CANCELED)\n\n## Archive",
+    }
+    _append_task_section(base_dir / dest_file, sec_lines, default_hdrs[dest_file])
+    sys.stdout.write(f"{prog_name()}: moved {target} ([{final_status}]) from {source_file} -> {dest_file}\n")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    prog = prog_name()
+    if "-h" in args or "--help" in args or (args and args[0] == "help"):
+        sys.stdout.write(usage_text())
+        return 0
+    if "-V" in args or "--version" in args or (args and args[0] == "version"):
+        sys.stdout.write(f"{prog} {VERSION}\n")
+        return 0
+    if args and args[0] in ("agents", "--agents", "--agents-md"):
+        sys.stdout.write(agents_markdown(prog) + "\n")
+        return 0
+    if args and args[0] in ("check-update", "--check-update"):
+        return cmd_check_update()
+    if args and args[0] in ("update", "--update", "--self-update"):
+        force = "--force" in args[1:]
+        return cmd_update(force=force)
+
+    base_dir = resolve_target_dir()
+    if not args:
+        return cmd_summary(base_dir, include_plan=False)
+    if args[0] in ("plan", "--plan", "-p"):
+        return cmd_summary(base_dir, include_plan=True)
+    if args[0] in ("archive", "--archive", "-a"):
+        pos, note = _parse_note_arg(args[1:])
+        canceled = "--canceled" in pos or "--cancel" in pos
+        pos = [p for p in pos if p not in ("--canceled", "--cancel", "--done")]
+        if not pos:
+            return cmd_archive_view(base_dir)
+        return cmd_transition(base_dir, pos[0], new_status=("CANCELED" if canceled else "DONE"), dest_file="TODO_ARCHIVE.md", note=note)
+    if args[0] in ("done", "--done"):
+        pos, note = _parse_note_arg(args[1:])
+        if len(pos) != 1:
+            raise SystemExit(f"{prog}: usage: {prog} done <ID> [-m NOTE]")
+        return cmd_transition(base_dir, pos[0], new_status="DONE", dest_file="TODO_ARCHIVE.md", note=note)
+    if args[0] in ("cancel", "canceled", "--cancel"):
+        pos, note = _parse_note_arg(args[1:])
+        if len(pos) != 1:
+            raise SystemExit(f"{prog}: usage: {prog} cancel <ID> [-m REASON]")
+        return cmd_transition(base_dir, pos[0], new_status="CANCELED", dest_file="TODO_ARCHIVE.md", note=note)
+    if args[0] in ("status", "--status"):
+        pos, note = _parse_note_arg(args[1:])
+        if len(pos) != 2:
+            raise SystemExit(f"{prog}: usage: {prog} status <ID> <STATUS> [-m NOTE]")
+        return cmd_transition(base_dir, pos[0], new_status=pos[1].upper(), dest_file=None, note=note)
+    if args[0] in ("activate", "--activate"):
+        wip = "--wip" in args[1:]
+        pos = [a for a in args[1:] if a != "--wip"]
+        if len(pos) != 1:
+            raise SystemExit(f"{prog}: usage: {prog} activate <ID> [--wip]")
+        return cmd_transition(base_dir, pos[0], new_status=("WIP" if wip else "NEW"), dest_file="TODO.md")
+    if args[0] in ("defer", "--defer"):
+        if len(args) != 2:
+            raise SystemExit(f"{prog}: usage: {prog} defer <ID>")
+        return cmd_transition(base_dir, args[1], new_status="NEW", dest_file="TODO_PLAN.md")
+    if args[0] in ("ids", "--ids"):
+        return cmd_ids(base_dir)
+    if args[0] in ("check", "--check"):
+        return cmd_check(base_dir)
+    if args[0] in ("init", "--init"):
+        force = "--force" in args[1:]
+        return cmd_init(base_dir, force=force)
+    if args[0] in ("list", "--list", "-l"):
+        filt = args[1] if len(args) > 1 else None
+        return cmd_list(base_dir, filt)
+    if args[0] in ("show", "--show"):
+        if len(args) != 2:
+            raise SystemExit(f"{prog}: usage: {prog} show <ID>")
+        return cmd_show(base_dir, args[1])
+    if len(args) == 1 and re.fullmatch(r"[A-Za-z]\d+", args[0]):
+        return cmd_show(base_dir, args[0])
+    if len(args) == 1 and Path(args[0]).is_dir():
+        return cmd_summary(resolve_target_dir(args[0]), include_plan=False)
+    raise SystemExit(f"{prog}: unknown arguments: {' '.join(args)} (see {prog} --help)")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
