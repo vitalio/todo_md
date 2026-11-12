@@ -23,7 +23,7 @@ irm https://raw.githubusercontent.com/vitalio/todo_md/main/install.ps1 | iex
 
 ## Integration with `run_block --start`
 
-Add `todo_md` to your project's `.run_block.start`:
+Running `todo_md init` automatically hooks `todo_md` into `.run_block.start` if it exists in the project directory:
 
 ```text
 $ run_block --agents
@@ -53,7 +53,7 @@ $ git log --oneline -10
 | `todo_md defer <ID>` | Move task `<ID>` from `TODO.md` into `TODO_PLAN.md` |
 | `todo_md ids` | Print highest task IDs in use and next free ID per letter prefix |
 | `todo_md check` | Validate task headings, status badges, and unique IDs across `TODO*.md` |
-| `todo_md init [--force]` | Create starter `TODO.md`, `TODO_PLAN.md`, and `TODO_ARCHIVE.md` |
+| `todo_md init [--force]` | Create starter `TODO*.md` files and hook into `.run_block.start` if present |
 | `todo_md --agents` | Print Markdown instructions for AI agents |
 | `todo_md update [--force]` | Self-update `todo_md` from GitHub (`vitalio/todo_md`) |
 | `todo_md check-update` | Check GitHub for a newer version |

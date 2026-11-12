@@ -8,7 +8,7 @@ Operational contract for an AI agent working on `todo_md`.
 
 - `todo_md` — standalone executable Python 3 CLI (zero external dependencies; supports Python 3.9+ on Linux, macOS, and Windows).
 - `.run_block.start` — declarative bundle specification for `run_block --start`.
-- `VERSION` — single-line semantic version string (`0.1.1`), must match `VERSION` inside `todo_md`.
+- `VERSION` — single-line semantic version string (`0.1.2`), must match `VERSION` inside `todo_md`.
 - `install.sh` — POSIX shell installer for Linux and macOS.
 - `install.ps1` — PowerShell 7+ installer for Windows.
 - `tests/test_todo_md.py` — unit test suite (`unittest`, no network required).

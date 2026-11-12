@@ -10,9 +10,9 @@ Task heading format: `### <emoji> [<STATUS>] <ID>: <title>`
 
 ## Resume
 
-Written 2026-11-12. Initial release `todo_md` `v0.1.0`:
-- Standalone zero-dependency Python 3 CLI (`todo_md`) with `install.sh` and `install.ps1`.
-- Subcommands: `todo_md` (operational summary), `todo_md plan`, `todo_md <ID>` / `todo_md show <ID>`, `todo_md list`, `todo_md ids`, `todo_md check`, `todo_md init`, and `todo_md agents`.
-- Seamless integration with `run_block --start` via `.run_block.start` (`$ todo_md agents`, `$ todo_md`).
+Written 2026-11-13. Released `todo_md` `v0.1.2`:
+- `todo_md init` now automatically installs `$ todo_md --agents` and `$ todo_md` into `.run_block.start` if it exists in the target directory (replacing plain `TODO.md` file entries).
+- Placed `$ run_block --agents` first in `.run_block.start` and `README.md`, and added explicit versioning/tag rules in `AGENTS.md`.
+- Enforced strict H2 section layout (`Resume` + `Tasks` in `TODO.md`, `Deferred Tasks` in `TODO_PLAN.md`, `Archive` in `TODO_ARCHIVE.md`) and orphan/truncated heading validation in `todo_md check`.
 
 ## Tasks

@@ -14,7 +14,7 @@
   {prog} show <ID>                   Show full section for task <ID>
   {prog} ids                         Print highest task IDs in use and next available ID per letter prefix
   {prog} check                       Validate task headings, status badges, and unique IDs across TODO*.md
-  {prog} init [--force]              Create starter TODO.md, TODO_PLAN.md, and TODO_ARCHIVE.md in current dir
+  {prog} init [--force]              Create starter TODO*.md files (and hook into .run_block.start if present)
   {prog} --agents | agents           Print Markdown instructions for AI agents (for run_block --start)
   {prog} update [--force]            Self-update {prog} from GitHub (vitalio/todo_md)
   {prog} check-update                Check if a newer version is available on GitHub
@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -369,11 +369,78 @@ def cmd_init(base_dir: Path, force: bool = False) -> int:
             continue
         p.write_text(content, encoding="utf-8")
         created.append(fname)
-    if not created:
+    rb_updated = install_into_run_block_start(base_dir)
+    if not created and not rb_updated:
         sys.stdout.write(f"{prog_name()}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
     else:
-        sys.stdout.write(f"{prog_name()}: initialized {', '.join(created)} in {base_dir}\n")
+        parts: list[str] = []
+        if created:
+            parts.append(f"initialized {', '.join(created)}")
+        if rb_updated:
+            parts.append("updated .run_block.start")
+        sys.stdout.write(f"{prog_name()}: {' and '.join(parts)} in {base_dir}\n")
     return 0
+
+
+def install_into_run_block_start(base_dir: Path) -> bool:
+    start_path = base_dir / ".run_block.start"
+    if not start_path.is_file():
+        return False
+    prog = prog_name()
+    orig_text = start_path.read_text(encoding="utf-8")
+    raw_lines = orig_text.splitlines()
+
+    has_agents = any(
+        re.fullmatch(rf"[\$!]\s+{re.escape(prog)}\s+(?:--agents(?:-md)?|agents)", l.strip())
+        or re.fullmatch(r"[\$!]\s+todo_md\s+(?:--agents(?:-md)?|agents)", l.strip())
+        for l in raw_lines
+    )
+    has_summary = any(
+        re.fullmatch(rf"[\$!]\s+{re.escape(prog)}", l.strip())
+        or re.fullmatch(r"[\$!]\s+todo_md", l.strip())
+        for l in raw_lines
+    )
+
+    # Remove plain 'TODO.md' file entry since '$ todo_md' includes full TODO.md + ID summary
+    filtered_lines: list[str] = []
+    removed_todo_file = False
+    for line in raw_lines:
+        if line.strip() == "TODO.md":
+            removed_todo_file = True
+            continue
+        filtered_lines.append(line)
+
+    to_insert: list[str] = []
+    if not has_agents:
+        to_insert.append(f"$ {prog} --agents")
+    if not has_summary:
+        to_insert.append(f"$ {prog}")
+
+    if not to_insert and not removed_todo_file:
+        return False
+
+    if to_insert:
+        # Prefer inserting right before the first '$ git' command, or after 'AGENTS.md'
+        insert_idx: int | None = None
+        for idx, line in enumerate(filtered_lines):
+            if re.match(r"^[\$!]\s+git\b", line.strip()):
+                insert_idx = idx
+                break
+        if insert_idx is not None:
+            prefix = filtered_lines[:insert_idx]
+            if prefix and prefix[-1].strip() != "" and not prefix[-1].strip().startswith(("$", "!")):
+                to_insert = ["", *to_insert]
+            filtered_lines = prefix + to_insert + filtered_lines[insert_idx:]
+        else:
+            if filtered_lines and filtered_lines[-1].strip() != "":
+                filtered_lines.append("")
+            filtered_lines.extend(to_insert)
+
+    new_text = "\n".join(filtered_lines).rstrip() + "\n"
+    if new_text == orig_text:
+        return False
+    start_path.write_text(new_text, encoding="utf-8")
+    return True
 
 
 def agents_markdown(prog: str | None = None) -> str:

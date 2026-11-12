@@ -38,11 +38,19 @@ class TestTodoMd(unittest.TestCase):
         self.assertIn("TODO_ARCHIVE.md", ra.stdout)
 
     def test_init_summary_list_show_ids_and_check(self):
+        (self.tmp / ".run_block.start").write_text(
+            "$ run_block --agents\n\nAGENTS.md\nTODO.md\n\n$ git status -sb\n",
+            encoding="utf-8",
+        )
         r_init = subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_init.returncode, 0)
+        self.assertIn("updated .run_block.start", r_init.stdout)
         self.assertTrue((self.tmp / "TODO.md").is_file())
         self.assertTrue((self.tmp / "TODO_PLAN.md").is_file())
         self.assertTrue((self.tmp / "TODO_ARCHIVE.md").is_file())
+        rb_start = (self.tmp / ".run_block.start").read_text(encoding="utf-8")
+        self.assertIn("$ todo_md --agents\n$ todo_md\n$ git status -sb", rb_start)
+        self.assertNotIn("\nTODO.md\n", rb_start)
 
         (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] P2: Planned item\nDetails here.\n", encoding="utf-8")
         (self.tmp / "TODO_ARCHIVE.md").write_text("# Archive\n\n## Archive\n\n### ✅ [DONE] A5: Old item\nDone.\n", encoding="utf-8")
