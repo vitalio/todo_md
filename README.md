@@ -29,7 +29,7 @@ Add `todo_md` to your project's `.run_block.start`:
 AGENTS.md
 
 $ run_block --agents
-$ todo_md agents
+$ todo_md --agents
 $ todo_md
 $ git status -sb
 $ git branch -vv
@@ -53,7 +53,7 @@ $ git log --oneline -10
 | `todo_md ids` | Print highest task IDs in use and next free ID per letter prefix |
 | `todo_md check` | Validate task headings, status badges, and unique IDs across `TODO*.md` |
 | `todo_md init [--force]` | Create starter `TODO.md`, `TODO_PLAN.md`, and `TODO_ARCHIVE.md` |
-| `todo_md agents` | Print Markdown instructions for AI agents |
+| `todo_md --agents` | Print Markdown instructions for AI agents |
 | `todo_md update [--force]` | Self-update `todo_md` from GitHub (`vitalio/todo_md`) |
 | `todo_md check-update` | Check GitHub for a newer version |
 | `todo_md -V`, `--version` | Print version and exit `0` |

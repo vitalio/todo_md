@@ -15,7 +15,7 @@
   {prog} ids                         Print highest task IDs in use and next available ID per letter prefix
   {prog} check                       Validate task headings, status badges, and unique IDs across TODO*.md
   {prog} init [--force]              Create starter TODO.md, TODO_PLAN.md, and TODO_ARCHIVE.md in current dir
-  {prog} agents                      Print Markdown instructions for AI agents (for run_block --start)
+  {prog} --agents | agents           Print Markdown instructions for AI agents (for run_block --start)
   {prog} update [--force]            Self-update {prog} from GitHub (vitalio/todo_md)
   {prog} check-update                Check if a newer version is available on GitHub
   {prog} -V | --version              Print version and exit 0
@@ -385,8 +385,11 @@ def agents_markdown(prog: str | None = None) -> str:
         "5. `✅ [DONE]` — Fully completed and verified; move from `TODO.md` to `TODO_ARCHIVE.md` in the completion commit.",
         "6. `❌ [CANCELED]` — Dropped or rejected; move from `TODO.md` to `TODO_ARCHIVE.md` (`### ❌ [CANCELED] F1: Title — *reason*`).",
         "",
-        f"- **Never reuse a task `<ID>`:** Check `IDs in use` (or run `{cmd} ids`) across all `TODO*.md` files before assigning a new `<ID>`.",
-        f"- **CLI helpers:** `{cmd}` (operational summary), `{cmd} <ID>` (show task), `{cmd} list [active|plan|archive|all|<STATUS>]` (list tasks), `{cmd} plan` (show TODO_PLAN.md), `{cmd} archive` (show TODO_ARCHIVE.md), `{cmd} done <ID> [-m SHA]` (mark DONE & move to TODO_ARCHIVE.md), `{cmd} cancel <ID> [-m reason]` (mark CANCELED & move to TODO_ARCHIVE.md), `{cmd} status <ID> <STATUS> [-m note]`, `{cmd} activate <ID>`, `{cmd} defer <ID>`, `{cmd} check` (validate structure and unique IDs).",
+        "- **Never reuse or split a task `<ID>` across files:** Every `<ID>` must appear in **at most one** of `TODO.md`, `TODO_PLAN.md`, or `TODO_ARCHIVE.md`. Check `IDs in use` (or run `" + cmd + " ids`) before assigning a new `<ID>`.",
+        "- **Partial completion / follow-up scope:** Never archive a completed part as `✅ [DONE] <ID>` in `TODO_ARCHIVE.md` while keeping a `Remaining:` task with the same `<ID>` in `TODO.md` or `TODO_PLAN.md`. Either keep the single task in `TODO.md` / `TODO_PLAN.md` (`🔵 [WIP]` or `⏸️ [HOLD]`) until 100% done, or close `<ID>` in `TODO_ARCHIVE.md` and create a **new `<ID>`** for the remaining follow-up work.",
+        "- **Task subsections and checklists:** Use `####` (`Goal`, `Acceptance`, `Progress`, `Waiting for`, `Next`, `Files`, `Checks`) inside a task when helpful. For checklist items use `- [ ] ⚪ [NEW] ...`, `- [x] ✅ [DONE] ...`, `- [~] ❌ [CANCELED] ...`.",
+        f"- **Validate after edits:** Run `{cmd} check` (or `{cmd} <dir> check`) after modifying `TODO*.md` to verify heading format and unique IDs.",
+        f"- **CLI helpers:** `{cmd}` (operational summary), `{cmd} <ID>` (show task), `{cmd} list [active|plan|archive|all|<STATUS>]` (list tasks), `{cmd} plan` (show TODO_PLAN.md), `{cmd} archive` (show TODO_ARCHIVE.md), `{cmd} done <ID> [-m SHA]` (mark DONE & move to TODO_ARCHIVE.md), `{cmd} cancel <ID> [-m reason]` (mark CANCELED & move to TODO_ARCHIVE.md), `{cmd} status <ID> <STATUS> [-m note]`, `{cmd} activate <ID>`, `{cmd} defer <ID>`, `{cmd} check`.",
     ]
     return "\n".join(lines)
 
