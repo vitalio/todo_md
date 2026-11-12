@@ -53,7 +53,7 @@ class TestTodoMd(unittest.TestCase):
 
         r_show = subprocess.run([str(SCRIPT), "P2"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_show.returncode, 0)
-        self.assertIn("TODO_PLAN.md:3", r_show.stdout)
+        self.assertIn("TODO_PLAN.md:5", r_show.stdout)
         self.assertIn("Planned item", r_show.stdout)
 
         r_list = subprocess.run([str(SCRIPT), "list", "all"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
