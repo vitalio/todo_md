@@ -301,10 +301,16 @@ def cmd_check(base_dir: Path) -> int:
                     errors.append(f"{loc}: duplicate task ID {tid} (first seen at {seen_ids[tid]})")
                 else:
                     seen_ids[tid] = loc
-                if fname == "TODO.md" and has_archive and status in ("DONE", "CANCELED"):
-                    errors.append(f"{loc}: {status} task {tid} should be moved from TODO.md to TODO_ARCHIVE.md")
+                if fname in ("TODO.md", "TODO_PLAN.md") and has_archive and status in ("DONE", "CANCELED"):
+                    errors.append(f"{loc}: {status} task {tid} should be moved to TODO_ARCHIVE.md")
+                if fname == "TODO_ARCHIVE.md" and status not in ("DONE", "CANCELED"):
+                    errors.append(f"{loc}: non-archived status [{status}] on task {tid} in TODO_ARCHIVE.md")
         if fname == "TODO.md" and h2_titles != ["Resume", "Tasks"]:
             errors.append(f"{fname}: expected H2 sections ['Resume', 'Tasks'], found {h2_titles}")
+        if fname == "TODO_PLAN.md" and h2_titles != ["Deferred Tasks"]:
+            errors.append(f"{fname}: expected H2 section ['Deferred Tasks'], found {h2_titles}")
+        if fname == "TODO_ARCHIVE.md" and "Archive" not in h2_titles:
+            errors.append(f"{fname}: missing '## Archive' H2 section, found {h2_titles}")
     if errors:
         for e in errors:
             sys.stderr.write(f"ERROR: {e}\n")
@@ -380,32 +386,45 @@ def agents_markdown(prog: str | None = None) -> str:
         "- Read `Resume` in [TODO.md](TODO.md) first and reconcile it with the current Git state.",
         "  **Git beats Resume:** on any mismatch, state it first and propose the `Resume` fix.",
         "- At the end of a task or session, update `Resume` in [TODO.md](TODO.md) with today's ISO date (`YYYY-MM-DD`),",
-        "  what was completed (with commit SHAs), and the exact next step so nothing needed to continue stays only in chat.",
+        "  what was completed (with commit SHAs), current state, and the exact next tasks in queue.",
         "",
-        "### 2. Three-file task structure",
+        "### 2. Strict file & section layout (no custom `##` sections)",
         "",
-        "- **[TODO.md](TODO.md)** — operational context (`Resume`) and **current / immediate** tasks only (keep the active queue small and focused).",
-        "- **[TODO_PLAN.md](TODO_PLAN.md)** — deferred or future tasks and open design questions. Move tasks from `TODO_PLAN.md` to `TODO.md` when selected for work.",
-        "- **[TODO_ARCHIVE.md](TODO_ARCHIVE.md)** — completed (`✅ [DONE]`) and canceled (`❌ [CANCELED]`) tasks with verification references (commit SHA, PR/MR).",
+        "- **[TODO.md](TODO.md)** — must contain **only** two `##` sections: `## Resume` and `## Tasks`.",
+        "  Never add extra `##` sections (such as `## Where we are`, `## Next steps`, or `## Notes`).",
+        "  Keep only **current and immediate** tasks under `## Tasks`.",
+        "- **[TODO_PLAN.md](TODO_PLAN.md)** — must contain **only** `## Deferred Tasks`.",
+        "  Never add unnumbered bullet lists (such as `## Open` or `## Ideas`); every deferred item or open",
+        "  question must be a `### <emoji> [<STATUS>] <ID>: <title>` section (`⚪ [NEW]`, `⏸️ [HOLD]`, or `❓ [QUESTION]`).",
+        "- **[TODO_ARCHIVE.md](TODO_ARCHIVE.md)** — holds `## Archive` with completed (`✅ [DONE]`) and",
+        "  canceled (`❌ [CANCELED]`) task records and verification references (commit SHA, PR/MR).",
         "",
         "### 3. Task heading grammar and 6 statuses",
         "",
-        "Every task section starts with:",
+        "Every task section under `## Tasks`, `## Deferred Tasks`, or `## Archive` must start with:",
         "`### <emoji> [<STATUS>] <ID>: <title> (— *<reason/context if applicable>*)`",
+        "followed by a blank line and the task body (never put loose text or bullets outside a `###` task section).",
         "",
         "Use **only** one of the 6 predefined statuses:",
         "1. `⚪ [NEW]` — Planned, not started yet, no blockers (`### ⚪ [NEW] F1: Title`).",
         "2. `🔵 [WIP]` — Actively being worked on right now (`### 🔵 [WIP] F1: Title`).",
-        "3. `⏸️ [HOLD]` — Paused waiting for an external dependency or validation (`### ⏸️ [HOLD] F1: Title — *waiting for ...*`).",
+        "3. `⏸️ [HOLD]` — Paused waiting for an external dependency or live validation (`### ⏸️ [HOLD] F1: Title — *waiting for ...*`).",
         "4. `❓ [QUESTION]` — Blocked on a human decision or clarification (`### ❓ [QUESTION] F1: Title — *need to clarify ...*`).",
-        "5. `✅ [DONE]` — Fully completed and verified; move from `TODO.md` to `TODO_ARCHIVE.md` in the completion commit.",
-        "6. `❌ [CANCELED]` — Dropped or rejected; move from `TODO.md` to `TODO_ARCHIVE.md` (`### ❌ [CANCELED] F1: Title — *reason*`).",
+        "5. `✅ [DONE]` — Fully completed and verified; lives in `TODO_ARCHIVE.md` (`### ✅ [DONE] F1: Title`).",
+        "6. `❌ [CANCELED]` — Dropped or rejected; lives in `TODO_ARCHIVE.md` (`### ❌ [CANCELED] F1: Title — *reason*`).",
         "",
         "- **Never reuse or split a task `<ID>` across files:** Every `<ID>` must appear in **at most one** of `TODO.md`, `TODO_PLAN.md`, or `TODO_ARCHIVE.md`. Check `IDs in use` (or run `" + cmd + " ids`) before assigning a new `<ID>`.",
         "- **Partial completion / follow-up scope:** Never archive a completed part as `✅ [DONE] <ID>` in `TODO_ARCHIVE.md` while keeping a `Remaining:` task with the same `<ID>` in `TODO.md` or `TODO_PLAN.md`. Either keep the single task in `TODO.md` / `TODO_PLAN.md` (`🔵 [WIP]` or `⏸️ [HOLD]`) until 100% done, or close `<ID>` in `TODO_ARCHIVE.md` and create a **new `<ID>`** for the remaining follow-up work.",
-        "- **Task subsections and checklists:** Use `####` (`Goal`, `Acceptance`, `Progress`, `Waiting for`, `Next`, `Files`, `Checks`) inside a task when helpful. For checklist items use `- [ ] ⚪ [NEW] ...`, `- [x] ✅ [DONE] ...`, `- [~] ❌ [CANCELED] ...`.",
-        f"- **Validate after edits:** Run `{cmd} check` (or `{cmd} <dir> check`) after modifying `TODO*.md` to verify heading format and unique IDs.",
-        f"- **CLI helpers:** `{cmd}` (operational summary), `{cmd} <ID>` (show task), `{cmd} list [active|plan|archive|all|<STATUS>]` (list tasks), `{cmd} plan` (show TODO_PLAN.md), `{cmd} archive` (show TODO_ARCHIVE.md), `{cmd} done <ID> [-m SHA]` (mark DONE & move to TODO_ARCHIVE.md), `{cmd} cancel <ID> [-m reason]` (mark CANCELED & move to TODO_ARCHIVE.md), `{cmd} status <ID> <STATUS> [-m note]`, `{cmd} activate <ID>`, `{cmd} defer <ID>`, `{cmd} check`.",
+        "- **Task subsections and checklists:** Inside a task body, use `####` (`Goal`, `Acceptance`, `Progress`, `Waiting for`, `Next`, `Files`, `Checks`) when helpful. For checklist items use `- [ ] ⚪ [NEW] ...`, `- [x] ✅ [DONE] ...`, `- [~] ❌ [CANCELED] ...`.",
+        f"- **Use `{cmd}` CLI for transitions and always validate:**",
+        f"  - `{cmd} [dir]` — print operational summary (`TODO.md` + `IDs in use` + plan/archive counts)",
+        f"  - `{cmd} [dir] <ID>` — show full section for task `<ID>` across `TODO*.md`",
+        f"  - `{cmd} [dir] list [active|plan|archive|all|<STATUS>]` — compact task table",
+        f"  - `{cmd} [dir] plan` / `{cmd} [dir] archive` — show `TODO_PLAN.md` or `TODO_ARCHIVE.md`",
+        f"  - `{cmd} [dir] done <ID> [-m SHA]` / `cancel <ID> [-m reason]` — mark DONE/CANCELED and move to `TODO_ARCHIVE.md`",
+        f"  - `{cmd} [dir] status <ID> <STATUS> [-m note]` — update status in place",
+        f"  - `{cmd} [dir] activate <ID> [--wip]` / `defer <ID>` — move task between `TODO_PLAN.md` and `TODO.md`",
+        f"  - `{cmd} [dir] check` — **must be run after any edit to `TODO*.md`** to verify layout, headings, and unique IDs",
     ]
     return "\n".join(lines)
 

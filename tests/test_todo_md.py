@@ -44,8 +44,8 @@ class TestTodoMd(unittest.TestCase):
         self.assertTrue((self.tmp / "TODO_PLAN.md").is_file())
         self.assertTrue((self.tmp / "TODO_ARCHIVE.md").is_file())
 
-        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n### ⚪ [NEW] P2: Planned item\nDetails here.\n", encoding="utf-8")
-        (self.tmp / "TODO_ARCHIVE.md").write_text("# Archive\n\n### ✅ [DONE] A5: Old item\nDone.\n", encoding="utf-8")
+        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] P2: Planned item\nDetails here.\n", encoding="utf-8")
+        (self.tmp / "TODO_ARCHIVE.md").write_text("# Archive\n\n## Archive\n\n### ✅ [DONE] A5: Old item\nDone.\n", encoding="utf-8")
 
         r_sum = subprocess.run([str(SCRIPT)], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_sum.returncode, 0)
@@ -91,7 +91,7 @@ class TestTodoMd(unittest.TestCase):
         self.assertIn("### ❌ [CANCELED] P2: Planned item — *not needed*", (self.tmp / "TODO_ARCHIVE.md").read_text(encoding="utf-8"))
 
         # Duplicate ID should fail check
-        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n### ⚪ [NEW] F1: Dup ID\n", encoding="utf-8")
+        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] F1: Dup ID\n", encoding="utf-8")
         r_bad = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertNotEqual(r_bad.returncode, 0)
         self.assertIn("duplicate task ID F1", r_bad.stderr)
