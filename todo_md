@@ -278,10 +278,12 @@ def cmd_check(base_dir: Path) -> int:
                 if not m:
                     errors.append(f"{fname}:{lineno}: invalid task heading format: {line}")
                     continue
-                emoji, status, tid, _ = m.groups()
+                emoji, status, tid, title = m.groups()
                 norm_emoji = "⏸️" if emoji.startswith("⏸") else emoji
                 if VALID_STATUSES.get(status) != norm_emoji:
                     errors.append(f"{fname}:{lineno}: mismatched emoji {emoji} for status [{status}]")
+                if title.endswith(",") or title.count("(") != title.count(")"):
+                    errors.append(f"{fname}:{lineno}: truncated/malformed task heading title: {title!r}")
                 loc = f"{fname}:{lineno}"
                 if tid in seen_ids:
                     errors.append(f"{loc}: duplicate task ID {tid} (first seen at {seen_ids[tid]})")
