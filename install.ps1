@@ -76,7 +76,3 @@ python $PyTarget --version
 Write-Host "Installed to: $Dir ($Name)"
 Write-Host "Tip: run '$Name init' in any repo to initialize TODO.md, TODO_PLAN.md, and TODO_ARCHIVE.md."
 Write-Host '============================================================'
-Write-Host ''
-Write-Host 'Below are the Markdown instructions for your AI model (for AGENTS.md / CLAUDE.md):'
-Write-Host ''
-python $PyTarget agents

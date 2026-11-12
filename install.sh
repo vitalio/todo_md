@@ -4,7 +4,7 @@
 # Installs or updates todo_md (https://github.com/vitalio/todo_md).
 # Checks for command name conflicts in PATH, offers an alternative name if
 # 'todo_md' is already taken by another program, installs into ~/.local/bin
-# (or --dir), and prints the AI agent instructions at the end.
+# (or --dir).
 # -h / --help prints this usage and exits 0 doing nothing.
 set -eu
 
@@ -139,7 +139,3 @@ case ":${PATH:-}:" in
 esac
 echo "Tip: run '$CMD_NAME init' in any repo to initialize TODO.md, TODO_PLAN.md, and TODO_ARCHIVE.md."
 echo "============================================================"
-echo ""
-echo "Below are the Markdown instructions for your AI model (for AGENTS.md / CLAUDE.md):"
-echo ""
-"$TARGET" agents
