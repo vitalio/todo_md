@@ -614,7 +614,10 @@ def main(argv: list[str] | None = None) -> int:
         force = "--force" in args[1:]
         return cmd_update(force=force)
 
-    base_dir = resolve_target_dir()
+    explicit_dir: str | None = None
+    if args and args[0] not in ("plan", "archive", "done", "cancel", "canceled", "status", "activate", "defer", "ids", "check", "init", "list", "show", "agents", "update", "check-update", "help", "version") and not args[0].startswith("-") and Path(args[0]).is_dir():
+        explicit_dir = args.pop(0)
+    base_dir = resolve_target_dir(explicit_dir)
     if not args:
         return cmd_summary(base_dir, include_plan=False)
     if args[0] in ("plan", "--plan", "-p"):
