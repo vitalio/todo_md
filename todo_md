@@ -267,13 +267,25 @@ def cmd_check(base_dir: Path) -> int:
             continue
         text = read_if_exists(p)
         in_fence = False
+        h2_titles: list[str] = []
+        in_tasks_sec = False
+        in_task_item = False
         for lineno, line in enumerate(text.splitlines(), start=1):
             if line.lstrip().startswith(FENCE):
                 in_fence = not in_fence
                 continue
             if in_fence:
                 continue
+            if line.startswith("## "):
+                sec_name = line[3:].strip()
+                h2_titles.append(sec_name)
+                in_tasks_sec = sec_name in ("Tasks", "Deferred Tasks", "Archive")
+                in_task_item = False
+                continue
+            if in_tasks_sec and not in_task_item and line.strip() and not line.startswith("### "):
+                errors.append(f"{fname}:{lineno}: unexpected content outside a '###' task section: {line}")
             if line.startswith("### "):
+                in_task_item = True
                 m = HEADING_RE.match(line)
                 if not m:
                     errors.append(f"{fname}:{lineno}: invalid task heading format: {line}")
@@ -291,6 +303,8 @@ def cmd_check(base_dir: Path) -> int:
                     seen_ids[tid] = loc
                 if fname == "TODO.md" and has_archive and status in ("DONE", "CANCELED"):
                     errors.append(f"{loc}: {status} task {tid} should be moved from TODO.md to TODO_ARCHIVE.md")
+        if fname == "TODO.md" and h2_titles != ["Resume", "Tasks"]:
+            errors.append(f"{fname}: expected H2 sections ['Resume', 'Tasks'], found {h2_titles}")
     if errors:
         for e in errors:
             sys.stderr.write(f"ERROR: {e}\n")
