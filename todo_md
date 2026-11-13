@@ -48,7 +48,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -241,8 +241,15 @@ def cmd_summary(base_dir: Path, include_plan: bool = False) -> int:
     todo_text = read_if_exists(todo_path).rstrip()
     sys.stdout.write(todo_text + "\n\n")
     top = highest_ids_in_use(base_dir)
+    active_tasks = parse_tasks_in_text(todo_text, "TODO.md")
     plan_tasks = parse_tasks_in_text(read_if_exists(base_dir / "TODO_PLAN.md"), "TODO_PLAN.md")
     arch_tasks = parse_tasks_in_text(read_if_exists(base_dir / "TODO_ARCHIVE.md"), "TODO_ARCHIVE.md")
+    if not active_tasks and plan_tasks and not include_plan:
+        sys.stdout.write(
+            f"*(No active tasks in TODO.md — showing deferred tasks from TODO_PLAN.md; run `{prog_name()} activate <ID>` to move into TODO.md)*\n\n"
+        )
+        for t in plan_tasks:
+            sys.stdout.write(str(t["section"]).rstrip() + "\n\n")
     sys.stdout.write("---\n")
     sys.stdout.write(f"IDs in use: {format_ids_summary(top)}\n")
     sys.stdout.write(f"Deferred in TODO_PLAN.md: {len(plan_tasks)} task(s) | Archived in TODO_ARCHIVE.md: {len(arch_tasks)} task(s)\n")

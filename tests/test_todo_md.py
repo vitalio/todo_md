@@ -93,6 +93,12 @@ class TestTodoMd(unittest.TestCase):
         self.assertEqual(arch_out.returncode, 0)
         self.assertIn("### ✅ [DONE] F1: Initial task — *commit 1234567*", arch_out.stdout)
 
+        # When TODO.md has 0 active tasks (F1 is done) and TODO_PLAN.md has P2, summary auto-displays P2
+        r_empty_sum = subprocess.run([str(SCRIPT)], cwd=str(self.tmp), capture_output=True, text=True, check=False)
+        self.assertEqual(r_empty_sum.returncode, 0)
+        self.assertIn("No active tasks in TODO.md — showing deferred tasks from TODO_PLAN.md", r_empty_sum.stdout)
+        self.assertIn("### ⚪ [NEW] P2: Planned item", r_empty_sum.stdout)
+
         r_can = subprocess.run([str(SCRIPT), "cancel", "P2", "-m", "not needed"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_can.returncode, 0, r_can.stderr)
         self.assertIn("### ❌ [CANCELED] P2: Planned item — *not needed*", (self.tmp / "TODO_ARCHIVE.md").read_text(encoding="utf-8"))
