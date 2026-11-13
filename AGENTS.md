@@ -1,7 +1,8 @@
 # `todo_md` — Project-Specific Agent Rules
 
-Universal workflow, language, Git, SemVer, and Python CLI rules are loaded via `.agents_bundle`.
+Universal workflow, language, Git, SemVer, Python CLI, and single-file build rules are loaded via `.agents_bundle`.
 
 ## Release trigger & local reinstall
 
-- Whenever `todo_md`, `install.sh`, or `install.ps1` is modified, bump `VERSION` and `VERSION = "..."` in `todo_md`, reinstall locally via `sh install.sh --yes >/dev/null`, commit, push to `origin main`, and push annotated tag `vX.Y.Z`.
+- Edit source files under `src/` (`src/*.py`) and run `python3 build.py` to regenerate `./todo_md`.
+- Whenever `src/`, `install.sh`, or `install.ps1` is modified, bump `VERSION` and `VERSION = "..."` in `src/header.py`, run `python3 build.py`, reinstall locally via `sh install.sh --yes >/dev/null`, commit, push to `origin main`, and push annotated tag `vX.Y.Z`.

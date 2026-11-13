@@ -48,7 +48,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -437,6 +437,7 @@ def agents_markdown(prog: str | None = None) -> str:
         "### 1. Session workflow (`Resume` & task lifecycle)",
         "",
         "- **Start of session:** Reconcile `Resume` in `TODO.md` with current Git state (`git status`, `git log`). **Git beats Resume:** if they diverge, report the mismatch first and update `Resume` (`" + cmd + " resume`).",
+        "- **Repository scope only:** Record only tasks, commits, and `Resume` state belonging to the current repository — never mix in tasks or changes from other repositories worked on in the same chat session.",
         "- **6 task statuses** (`### <emoji> [<STATUS>] <ID>: <title> — *<optional note>*`):",
         "  - `⚪ [NEW]` — planned, ready to start (`TODO.md` or `TODO_PLAN.md`)",
         "  - `🔵 [WIP]` — actively in progress (`TODO.md`)",
@@ -466,70 +467,6 @@ def agents_markdown(prog: str | None = None) -> str:
         f"  - `{cmd} check` — validate layout, headings, and unique IDs across `TODO*.md`",
     ]
     return "\n".join(lines)
-
-
-def parse_version_from_source(source: str) -> str | None:
-    m = re.search(r'^VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]', source, flags=re.MULTILINE)
-    return m.group(1) if m else None
-
-
-def version_tuple(v: str) -> tuple[int, ...]:
-    return tuple(int(p) for p in re.split(r"[^0-9]+", v) if p)
-
-
-def fetch_remote_script(url: str | None = None) -> str:
-    target_url = url or os.environ.get("TODO_MD_UPDATE_URL") or DEFAULT_UPDATE_URL
-    req = urllib.request.Request(target_url, headers={"User-Agent": f"todo_md/{VERSION}"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = resp.read().decode("utf-8")
-    if REPO_MARKER not in data:
-        raise ValueError(f"remote file at {target_url} is not a valid vitalio/todo_md script")
-    return data
-
-
-def cmd_check_update(url: str | None = None) -> int:
-    prog = prog_name()
-    try:
-        remote_src = fetch_remote_script(url)
-    except Exception as exc:
-        sys.stderr.write(f"{prog}: failed to check for updates: {exc}\n")
-        return 1
-    remote_ver = parse_version_from_source(remote_src) or "unknown"
-    if version_tuple(remote_ver) > version_tuple(VERSION):
-        sys.stdout.write(f"{prog}: update available: {VERSION} -> {remote_ver} (run '{prog} update')\n")
-    else:
-        sys.stdout.write(f"{prog} {VERSION} is up to date (remote: {remote_ver}).\n")
-    return 0
-
-
-def cmd_update(force: bool = False, url: str | None = None, target_path: Path | None = None) -> int:
-    prog = prog_name()
-    dest = target_path or Path(__file__).resolve()
-    try:
-        remote_src = fetch_remote_script(url)
-    except Exception as exc:
-        sys.stderr.write(f"{prog}: update failed: {exc}\n")
-        return 1
-    remote_ver = parse_version_from_source(remote_src) or "unknown"
-    if not force and version_tuple(remote_ver) <= version_tuple(VERSION):
-        sys.stdout.write(f"{prog} {VERSION} is already up to date.\n")
-        return 0
-    try:
-        tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=str(dest.parent))
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                f.write(remote_src)
-            os.chmod(tmp_name, 0o755)
-            os.replace(tmp_name, dest)
-        except Exception:
-            if os.path.exists(tmp_name):
-                os.unlink(tmp_name)
-            raise
-    except Exception as exc:
-        sys.stderr.write(f"{prog}: could not write updated binary to {dest}: {exc}\n")
-        return 1
-    sys.stdout.write(f"{prog}: updated {VERSION} -> {remote_ver} ({dest})\n")
-    return 0
 
 
 def _extract_and_remove_task(text: str, target_id: str) -> tuple[dict[str, object] | None, str]:
@@ -990,6 +927,70 @@ def cmd_resume(base_dir: Path, argv: list[str]) -> int:
             sys.stderr.write(f"ERROR: {e}\n")
         return 1
     sys.stdout.write(f"{prog}: updated ## Resume in {todo_path}\n")
+    return 0
+
+
+def parse_version_from_source(source: str) -> str | None:
+    m = re.search(r'^VERSION\s*=\s*["\x27]([^"\x27]+)["\x27]', source, flags=re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in re.split(r"[^0-9]+", v) if p)
+
+
+def fetch_remote_script(url: str | None = None) -> str:
+    target_url = url or os.environ.get("TODO_MD_UPDATE_URL") or DEFAULT_UPDATE_URL
+    req = urllib.request.Request(target_url, headers={"User-Agent": f"todo_md/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = resp.read().decode("utf-8")
+    if REPO_MARKER not in data:
+        raise ValueError(f"remote file at {target_url} is not a valid vitalio/todo_md script")
+    return data
+
+
+def cmd_check_update(url: str | None = None) -> int:
+    prog = prog_name()
+    try:
+        remote_src = fetch_remote_script(url)
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: failed to check for updates: {exc}\n")
+        return 1
+    remote_ver = parse_version_from_source(remote_src) or "unknown"
+    if version_tuple(remote_ver) > version_tuple(VERSION):
+        sys.stdout.write(f"{prog}: update available: {VERSION} -> {remote_ver} (run '{prog} update')\n")
+    else:
+        sys.stdout.write(f"{prog} {VERSION} is up to date (remote: {remote_ver}).\n")
+    return 0
+
+
+def cmd_update(force: bool = False, url: str | None = None, target_path: Path | None = None) -> int:
+    prog = prog_name()
+    dest = target_path or Path(__file__).resolve()
+    try:
+        remote_src = fetch_remote_script(url)
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: update failed: {exc}\n")
+        return 1
+    remote_ver = parse_version_from_source(remote_src) or "unknown"
+    if not force and version_tuple(remote_ver) <= version_tuple(VERSION):
+        sys.stdout.write(f"{prog} {VERSION} is already up to date.\n")
+        return 0
+    try:
+        tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=str(dest.parent))
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(remote_src)
+            os.chmod(tmp_name, 0o755)
+            os.replace(tmp_name, dest)
+        except Exception:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+            raise
+    except Exception as exc:
+        sys.stderr.write(f"{prog}: could not write updated binary to {dest}: {exc}\n")
+        return 1
+    sys.stdout.write(f"{prog}: updated {VERSION} -> {remote_ver} ({dest})\n")
     return 0
 
 
