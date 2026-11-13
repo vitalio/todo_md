@@ -1,6 +1,5 @@
 # .run_block.start — session context bundle specification for 'run_block --start'
-$ run_block --agents
-$ run_block --agents-rules workflow lang semver python-cli
+$ run_block --agents python-tool
 
 AGENTS.md
 
