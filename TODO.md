@@ -10,11 +10,8 @@ Task heading format: `### <emoji> [<STATUS>] <ID>: <title>`
 
 ## Resume
 
-Written 2026-11-13. Released `todo_md` `v0.2.0`:
-- Added full task & resume mutation CLI (`todo_md add`, `todo_md edit`, `todo_md append`, `todo_md resume`) supporting both flags (`-t`, `-m`, `-b`) and `stdin` heredocs so AI agents can perform 100% of `TODO*.md` updates via CLI.
-- Redesigned `todo_md --agents` to be concise, removed self-referential ``TODO.md`` links, and documented the complete CLI workflow.
-- Decoupled `todo_md` and `run_block` completely (removed `install_into_run_block_start` and cross-references from `todo_md`, `README.md`, and `AGENTS.md`).
-- Slimmed `AGENTS.md` to contain only non-computable engineering and release rules.
-- Next in queue: `F1` (`todo_md stats`), `F2` (`--json` output).
+Written 2026-11-13. Released `todo_md` `v0.2.1` (`84bd75a`):
+- When `TODO.md` has 0 active tasks and `TODO_PLAN.md` has deferred tasks, `todo_md` summary automatically displays the deferred tasks with a hint to run `todo_md activate <ID>`.
+- Replaced `.run_block.start` with `.agents_bundle`.
 
 ## Tasks
