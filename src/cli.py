@@ -63,18 +63,16 @@ def cmd_update(force: bool = False, url: str | None = None, target_path: Path | 
 
 
 KNOWN_SUBCOMMANDS = (
-    "plan",
     "archive",
     "add",
     "edit",
     "append",
-    "resume",
     "done",
     "cancel",
     "canceled",
     "status",
-    "activate",
-    "defer",
+    "next",
+    "top",
     "ids",
     "check",
     "init",
@@ -106,14 +104,17 @@ def main(argv: list[str] | None = None) -> int:
         force = "--force" in args[1:]
         return cmd_update(force=force)
 
+    full = False
+    if "--full" in args:
+        full = True
+        args = [a for a in args if a != "--full"]
+
     explicit_dir: str | None = None
     if args and args[0] not in KNOWN_SUBCOMMANDS and not args[0].startswith("-") and Path(args[0]).is_dir():
         explicit_dir = args.pop(0)
     base_dir = resolve_target_dir(explicit_dir)
     if not args:
-        return cmd_summary(base_dir, include_plan=False)
-    if args[0] in ("plan", "--plan", "-p"):
-        return cmd_summary(base_dir, include_plan=True)
+        return cmd_summary(base_dir, full=full)
     if args[0] in ("archive", "--archive", "-a"):
         pos, note = _parse_note_arg(args[1:])
         canceled = "--canceled" in pos or "--cancel" in pos
@@ -127,8 +128,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_edit(base_dir, args[1:])
     if args[0] in ("append", "--append"):
         return cmd_append(base_dir, args[1:])
-    if args[0] in ("resume", "--resume"):
-        return cmd_resume(base_dir, args[1:])
     if args[0] in ("done", "--done"):
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 1:
@@ -143,17 +142,13 @@ def main(argv: list[str] | None = None) -> int:
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 2:
             raise SystemExit(f"{prog}: usage: {prog} status <ID> <STATUS> [-m NOTE]")
-        return cmd_transition(base_dir, pos[0], new_status=pos[1].upper(), dest_file=None, note=note)
-    if args[0] in ("activate", "--activate"):
-        wip = "--wip" in args[1:]
-        pos = [a for a in args[1:] if a != "--wip"]
+        st_up = pos[1].upper()
+        return cmd_transition(base_dir, pos[0], new_status=st_up, dest_file=None, note=note, promote_top=(st_up in ("WIP", "NEXT")))
+    if args[0] in ("next", "top", "--next", "--top"):
+        pos, note = _parse_note_arg(args[1:])
         if len(pos) != 1:
-            raise SystemExit(f"{prog}: usage: {prog} activate <ID> [--wip]")
-        return cmd_transition(base_dir, pos[0], new_status=("WIP" if wip else "NEW"), dest_file="TODO.md")
-    if args[0] in ("defer", "--defer"):
-        if len(args) != 2:
-            raise SystemExit(f"{prog}: usage: {prog} defer <ID>")
-        return cmd_transition(base_dir, args[1], new_status="NEW", dest_file="TODO_PLAN.md")
+            raise SystemExit(f"{prog}: usage: {prog} next <ID> [-m NOTE]")
+        return cmd_transition(base_dir, pos[0], new_status="NEXT", dest_file="TODO.md", note=note, promote_top=True)
     if args[0] in ("ids", "--ids"):
         return cmd_ids(base_dir)
     if args[0] in ("check", "--check"):
@@ -171,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) == 1 and re.fullmatch(r"[A-Za-z]\d+", args[0]):
         return cmd_show(base_dir, args[0])
     if len(args) == 1 and Path(args[0]).is_dir():
-        return cmd_summary(resolve_target_dir(args[0]), include_plan=False)
+        return cmd_summary(resolve_target_dir(args[0]), full=full)
     raise SystemExit(f"{prog}: unknown arguments: {' '.join(args)} (see {prog} --help)")
 
 

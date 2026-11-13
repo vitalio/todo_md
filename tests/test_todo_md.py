@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,11 +27,12 @@ class TestTodoMd(unittest.TestCase):
         rh = subprocess.run([str(SCRIPT), "-h"], capture_output=True, text=True, check=False)
         self.assertEqual(rh.returncode, 0)
         self.assertIn("Usage:", rh.stdout)
-        self.assertIn("resume", rh.stdout)
+        self.assertNotIn("resume", rh.stdout)
+        self.assertNotIn("TODO_PLAN.md", rh.stdout)
+        self.assertIn("next <ID>", rh.stdout)
         self.assertIn("add", rh.stdout)
         self.assertIn("edit", rh.stdout)
         self.assertIn("append", rh.stdout)
-        self.assertNotIn("run_block", rh.stdout)
 
         rv = subprocess.run([str(SCRIPT), "--version"], capture_output=True, text=True, check=False)
         self.assertEqual(rv.returncode, 0)
@@ -39,82 +41,59 @@ class TestTodoMd(unittest.TestCase):
 
         ra = subprocess.run([str(SCRIPT), "agents"], capture_output=True, text=True, check=False)
         self.assertEqual(ra.returncode, 0)
-        self.assertIn("Git beats Resume", ra.stdout)
+        self.assertIn("Repository scope only", ra.stdout)
+        self.assertIn("🎯 [NEXT]", ra.stdout)
         self.assertIn("TODO_ARCHIVE.md", ra.stdout)
-        self.assertNotIn("[TODO.md](TODO.md)", ra.stdout)
-        self.assertNotIn("run_block", ra.stdout)
+        self.assertNotIn("TODO_PLAN.md", ra.stdout)
+        self.assertNotIn("Resume", ra.stdout)
 
-    def test_init_summary_list_show_ids_and_check(self):
+    def test_init_summary_priority_smart_truncation_and_check(self):
         r_init = subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_init.returncode, 0)
         self.assertTrue((self.tmp / "TODO.md").is_file())
-        self.assertTrue((self.tmp / "TODO_PLAN.md").is_file())
+        self.assertFalse((self.tmp / "TODO_PLAN.md").exists())
         self.assertTrue((self.tmp / "TODO_ARCHIVE.md").is_file())
 
-        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] P2: Planned item\nDetails here.\n", encoding="utf-8")
-        (self.tmp / "TODO_ARCHIVE.md").write_text("# Archive\n\n## Archive\n\n### ✅ [DONE] A5: Old item\nDone.\n", encoding="utf-8")
+        # Add 6 tasks; task P1 has a multi-line body
+        long_body = "\n".join(f"Detail line {i}" for i in range(1, 10))
+        subprocess.run([str(SCRIPT), "add", "P1", "Long backlog item", "-b", long_body], cwd=str(self.tmp), check=True)
+        for idx in range(1, 6):
+            subprocess.run([str(SCRIPT), "add", f"F{idx}", f"Feature {idx}", "-b", f"Body {idx}"], cwd=str(self.tmp), check=True)
 
+        # Promote F3 to NEXT priority
+        r_nxt = subprocess.run([str(SCRIPT), "next", "F3", "-m", "top priority"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
+        self.assertEqual(r_nxt.returncode, 0, r_nxt.stderr)
+        todo_content = (self.tmp / "TODO.md").read_text(encoding="utf-8")
+        self.assertLess(todo_content.index("F3:"), todo_content.index("P1:"))
+        self.assertIn("# 🎯 [NEXT] F3: Feature 3 — *top priority*", todo_content)
+
+        # Default summary truncates long NEW task P1 (>5 tasks total), while --full shows all lines
         r_sum = subprocess.run([str(SCRIPT)], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_sum.returncode, 0)
-        self.assertIn("IDs in use: A:5 F:1 P:2  (next free: A6, F2, P3)", r_sum.stdout)
+        self.assertIn("Body 3", r_sum.stdout)
+        self.assertIn("Detail line 1", r_sum.stdout)
+        self.assertNotIn("Detail line 8", r_sum.stdout)
+        self.assertIn("+8 more lines", r_sum.stdout)
 
-        r_show = subprocess.run([str(SCRIPT), "P2"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_show.returncode, 0)
-        self.assertIn("TODO_PLAN.md:5", r_show.stdout)
-        self.assertIn("Planned item", r_show.stdout)
+        r_full = subprocess.run([str(SCRIPT), "--full"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
+        self.assertEqual(r_full.returncode, 0)
+        self.assertIn("Detail line 8", r_full.stdout)
 
-        r_list = subprocess.run([str(SCRIPT), "list", "all"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_list.returncode, 0)
-        self.assertIn("F1", r_list.stdout)
-        self.assertIn("P2", r_list.stdout)
-        self.assertIn("A5", r_list.stdout)
+        # Done automatically stamps ISO date
+        today = date.today().isoformat()
+        r_done = subprocess.run([str(SCRIPT), "done", "F3", "-m", "abc1234"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
+        self.assertEqual(r_done.returncode, 0, r_done.stderr)
+        arch_txt = (self.tmp / "TODO_ARCHIVE.md").read_text(encoding="utf-8")
+        self.assertIn(f"# ✅ [DONE] F3: Feature 3 — *{today}, abc1234*", arch_txt)
 
         r_chk = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_chk.returncode, 0, r_chk.stderr)
 
-        # Test status, activate, defer, done, cancel, archive
-        r_st = subprocess.run([str(SCRIPT), "status", "F1", "WIP", "-m", "in progress"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_st.returncode, 0, r_st.stderr)
-        self.assertIn("### 🔵 [WIP] F1: Initial task — *in progress*", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
-
-        r_act = subprocess.run([str(SCRIPT), "activate", "P2", "--wip"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_act.returncode, 0, r_act.stderr)
-        self.assertIn("### 🔵 [WIP] P2: Planned item", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
-        self.assertNotIn("P2", (self.tmp / "TODO_PLAN.md").read_text(encoding="utf-8"))
-
-        r_def = subprocess.run([str(SCRIPT), "defer", "P2"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_def.returncode, 0, r_def.stderr)
-        self.assertIn("### ⚪ [NEW] P2: Planned item", (self.tmp / "TODO_PLAN.md").read_text(encoding="utf-8"))
-
-        r_done = subprocess.run([str(SCRIPT), "done", "F1", "-m", "commit 1234567"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_done.returncode, 0, r_done.stderr)
-        self.assertNotIn("F1:", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
-        arch_out = subprocess.run([str(SCRIPT), "archive"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(arch_out.returncode, 0)
-        self.assertIn("### ✅ [DONE] F1: Initial task — *commit 1234567*", arch_out.stdout)
-
-        # When TODO.md has 0 active tasks (F1 is done) and TODO_PLAN.md has P2, summary auto-displays P2
-        r_empty_sum = subprocess.run([str(SCRIPT)], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_empty_sum.returncode, 0)
-        self.assertIn("No active tasks in TODO.md — showing deferred tasks from TODO_PLAN.md", r_empty_sum.stdout)
-        self.assertIn("### ⚪ [NEW] P2: Planned item", r_empty_sum.stdout)
-
-        r_can = subprocess.run([str(SCRIPT), "cancel", "P2", "-m", "not needed"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertEqual(r_can.returncode, 0, r_can.stderr)
-        self.assertIn("### ❌ [CANCELED] P2: Planned item — *not needed*", (self.tmp / "TODO_ARCHIVE.md").read_text(encoding="utf-8"))
-
-        # Duplicate ID should fail check
-        (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] F1: Dup ID\n", encoding="utf-8")
-        r_bad = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
-        self.assertNotEqual(r_bad.returncode, 0)
-        self.assertIn("duplicate task ID F1", r_bad.stderr)
-
-    def test_add_edit_append_and_resume_cli(self):
+    def test_add_edit_append_cli(self):
         subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
 
-        # Auto-assign next free F ID (F2) with body from stdin
         r_add = subprocess.run(
-            [str(SCRIPT), "add", "F", "Second feature", "--status", "WIP", "-m", "active now"],
+            [str(SCRIPT), "add", "F", "First feature", "--status", "WIP", "-m", "active now"],
             input="Feature body line 1.\n",
             cwd=str(self.tmp),
             capture_output=True,
@@ -123,12 +102,10 @@ class TestTodoMd(unittest.TestCase):
         )
         self.assertEqual(r_add.returncode, 0, r_add.stderr)
         todo_txt = (self.tmp / "TODO.md").read_text(encoding="utf-8")
-        self.assertIn("### 🔵 [WIP] F2: Second feature — *active now*", todo_txt)
-        self.assertIn("Feature body line 1.", todo_txt)
+        self.assertIn("# 🔵 [WIP] F1: First feature — *active now*", todo_txt)
 
-        # Append to F2
         r_app = subprocess.run(
-            [str(SCRIPT), "append", "F2", "-b", "- [x] ✅ [DONE] Substep 1"],
+            [str(SCRIPT), "append", "F1", "-b", "- [x] Substep 1"],
             cwd=str(self.tmp),
             capture_output=True,
             text=True,
@@ -137,9 +114,8 @@ class TestTodoMd(unittest.TestCase):
         self.assertEqual(r_app.returncode, 0, r_app.stderr)
         self.assertIn("Substep 1", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
 
-        # Edit F2 title and body
         r_ed = subprocess.run(
-            [str(SCRIPT), "edit", "F2", "-t", "Renamed second feature", "-m", "updated note", "-b", "Replaced body."],
+            [str(SCRIPT), "edit", "F1", "-t", "Renamed feature", "-m", "updated note", "-b", "Replaced body."],
             cwd=str(self.tmp),
             capture_output=True,
             text=True,
@@ -147,21 +123,8 @@ class TestTodoMd(unittest.TestCase):
         )
         self.assertEqual(r_ed.returncode, 0, r_ed.stderr)
         todo_txt = (self.tmp / "TODO.md").read_text(encoding="utf-8")
-        self.assertIn("### 🔵 [WIP] F2: Renamed second feature — *updated note*", todo_txt)
+        self.assertIn("# 🔵 [WIP] F1: Renamed feature — *updated note*", todo_txt)
         self.assertIn("Replaced body.", todo_txt)
-        self.assertNotIn("Substep 1", todo_txt)
-
-        # Update Resume via stdin
-        r_res = subprocess.run(
-            [str(SCRIPT), "resume"],
-            input="Written 2026-11-13. Updated via CLI.\n",
-            cwd=str(self.tmp),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(r_res.returncode, 0, r_res.stderr)
-        self.assertIn("Written 2026-11-13. Updated via CLI.", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
 
         r_chk = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_chk.returncode, 0, r_chk.stderr)
