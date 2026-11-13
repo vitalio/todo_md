@@ -2,10 +2,9 @@
 
 **Structured Markdown task management (`TODO.md`, `TODO_PLAN.md`, `TODO_ARCHIVE.md`) for humans and AI coding agents.**
 
-`todo_md` is a zero-dependency CLI companion to [`run_block`](https://github.com/vitalio/run_block).
-It keeps your repository's operational context (`Resume`), active queue (`TODO.md`), deferred
-roadmap (`TODO_PLAN.md`), and historical archive (`TODO_ARCHIVE.md`) clean, validated, and
-ready to bundle into new AI chat sessions.
+`todo_md` is a zero-dependency Python 3 CLI that keeps your repository's operational context
+(`## Resume`), active queue (`TODO.md`), deferred roadmap (`TODO_PLAN.md`), and historical
+archive (`TODO_ARCHIVE.md`) clean, validated, and easy to manage from the terminal.
 
 ## Quick Installation
 
@@ -21,20 +20,24 @@ curl -fsSL https://raw.githubusercontent.com/vitalio/todo_md/main/install.sh | s
 irm https://raw.githubusercontent.com/vitalio/todo_md/main/install.ps1 | iex
 ```
 
-## Integration with `run_block --start`
+## Quick Start
 
-Running `todo_md init` automatically hooks `todo_md` into `.run_block.start` if it exists in the project directory:
+Initialize `TODO.md`, `TODO_PLAN.md`, and `TODO_ARCHIVE.md` in your repository:
 
-```text
-$ run_block --agents
+```bash
+todo_md init
+todo_md
+```
 
-AGENTS.md
+Create, update, transition, and validate tasks via the CLI:
 
-$ todo_md --agents
-$ todo_md
-$ git status -sb
-$ git branch -vv
-$ git log --oneline -10
+```bash
+todo_md add F "Implement feature X" -b "Goal and acceptance criteria."
+todo_md status F2 WIP -m "started implementation"
+todo_md append F2 -b "- [x] ✅ [DONE] Unit tests added"
+todo_md done F2 -m "commit a1b2c3d"
+todo_md resume -b "Written 2026-11-13. Completed F2 (a1b2c3d). Next: F3."
+todo_md check
 ```
 
 ## CLI Reference
@@ -46,14 +49,18 @@ $ git log --oneline -10
 | `todo_md list [filter]` | List tasks (`active`, `plan`, `archive`, `all`, or status like `WIP`) |
 | `todo_md plan` | Print operational summary plus full `TODO_PLAN.md` |
 | `todo_md archive [<ID>] [-m NOTE]` | Print `TODO_ARCHIVE.md`, or archive task `<ID>` to `TODO_ARCHIVE.md` |
-| `todo_md done <ID> [-m NOTE]` | Mark task `<ID>` as `✅ [DONE]` and move it to `TODO_ARCHIVE.md` |
-| `todo_md cancel <ID> [-m REASON]` | Mark task `<ID>` as `❌ [CANCELED]` and move it to `TODO_ARCHIVE.md` |
+| `todo_md add [<ID\|PREFIX>] <TITLE> [opts]` | Add a new task (`--plan`, `--status STATUS`, `-m NOTE`, `-b BODY` or `stdin`) |
+| `todo_md edit <ID> [opts]` | Update task title, note, or body (`-t TITLE`, `-m NOTE`, `-b BODY` or `stdin`) |
+| `todo_md append <ID> [-b TEXT]` | Append progress/notes to task `<ID>` body (`-b TEXT` or `stdin`) |
 | `todo_md status <ID> <STATUS> [-m N]` | Update task status (`NEW`, `WIP`, `HOLD`, `QUESTION`, `DONE`, `CANCELED`) |
 | `todo_md activate <ID> [--wip]` | Move task `<ID>` from `TODO_PLAN.md` into active `TODO.md` |
 | `todo_md defer <ID>` | Move task `<ID>` from `TODO.md` into `TODO_PLAN.md` |
+| `todo_md done <ID> [-m NOTE]` | Mark task `<ID>` as `✅ [DONE]` and move it to `TODO_ARCHIVE.md` |
+| `todo_md cancel <ID> [-m REASON]` | Mark task `<ID>` as `❌ [CANCELED]` and move it to `TODO_ARCHIVE.md` |
+| `todo_md resume [-b TEXT]` | View or replace `## Resume` in `TODO.md` (`-b TEXT` or `stdin`) |
 | `todo_md ids` | Print highest task IDs in use and next free ID per letter prefix |
 | `todo_md check` | Validate task headings, status badges, and unique IDs across `TODO*.md` |
-| `todo_md init [--force]` | Create starter `TODO*.md` files and hook into `.run_block.start` if present |
+| `todo_md init [--force]` | Create starter `TODO.md`, `TODO_PLAN.md`, and `TODO_ARCHIVE.md` |
 | `todo_md --agents` | Print Markdown instructions for AI agents |
 | `todo_md update [--force]` | Self-update `todo_md` from GitHub (`vitalio/todo_md`) |
 | `todo_md check-update` | Check GitHub for a newer version |
@@ -62,4 +69,4 @@ $ git log --oneline -10
 
 ## License
 
-[MIT](LICENSE) © 2026 [vitalio](https://github.com/vitalio)
+MIT © 2026 vitalio

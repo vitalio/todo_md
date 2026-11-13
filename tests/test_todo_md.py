@@ -26,6 +26,11 @@ class TestTodoMd(unittest.TestCase):
         rh = subprocess.run([str(SCRIPT), "-h"], capture_output=True, text=True, check=False)
         self.assertEqual(rh.returncode, 0)
         self.assertIn("Usage:", rh.stdout)
+        self.assertIn("resume", rh.stdout)
+        self.assertIn("add", rh.stdout)
+        self.assertIn("edit", rh.stdout)
+        self.assertIn("append", rh.stdout)
+        self.assertNotIn("run_block", rh.stdout)
 
         rv = subprocess.run([str(SCRIPT), "--version"], capture_output=True, text=True, check=False)
         self.assertEqual(rv.returncode, 0)
@@ -36,21 +41,15 @@ class TestTodoMd(unittest.TestCase):
         self.assertEqual(ra.returncode, 0)
         self.assertIn("Git beats Resume", ra.stdout)
         self.assertIn("TODO_ARCHIVE.md", ra.stdout)
+        self.assertNotIn("[TODO.md](TODO.md)", ra.stdout)
+        self.assertNotIn("run_block", ra.stdout)
 
     def test_init_summary_list_show_ids_and_check(self):
-        (self.tmp / ".run_block.start").write_text(
-            "$ run_block --agents\n\nAGENTS.md\nTODO.md\n\n$ git status -sb\n",
-            encoding="utf-8",
-        )
         r_init = subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_init.returncode, 0)
-        self.assertIn("updated .run_block.start", r_init.stdout)
         self.assertTrue((self.tmp / "TODO.md").is_file())
         self.assertTrue((self.tmp / "TODO_PLAN.md").is_file())
         self.assertTrue((self.tmp / "TODO_ARCHIVE.md").is_file())
-        rb_start = (self.tmp / ".run_block.start").read_text(encoding="utf-8")
-        self.assertIn("$ todo_md --agents\n$ todo_md\n$ git status -sb", rb_start)
-        self.assertNotIn("\nTODO.md\n", rb_start)
 
         (self.tmp / "TODO_PLAN.md").write_text("# Plan\n\n## Deferred Tasks\n\n### ⚪ [NEW] P2: Planned item\nDetails here.\n", encoding="utf-8")
         (self.tmp / "TODO_ARCHIVE.md").write_text("# Archive\n\n## Archive\n\n### ✅ [DONE] A5: Old item\nDone.\n", encoding="utf-8")
@@ -103,6 +102,63 @@ class TestTodoMd(unittest.TestCase):
         r_bad = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertNotEqual(r_bad.returncode, 0)
         self.assertIn("duplicate task ID F1", r_bad.stderr)
+
+    def test_add_edit_append_and_resume_cli(self):
+        subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+
+        # Auto-assign next free F ID (F2) with body from stdin
+        r_add = subprocess.run(
+            [str(SCRIPT), "add", "F", "Second feature", "--status", "WIP", "-m", "active now"],
+            input="Feature body line 1.\n",
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_add.returncode, 0, r_add.stderr)
+        todo_txt = (self.tmp / "TODO.md").read_text(encoding="utf-8")
+        self.assertIn("### 🔵 [WIP] F2: Second feature — *active now*", todo_txt)
+        self.assertIn("Feature body line 1.", todo_txt)
+
+        # Append to F2
+        r_app = subprocess.run(
+            [str(SCRIPT), "append", "F2", "-b", "- [x] ✅ [DONE] Substep 1"],
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_app.returncode, 0, r_app.stderr)
+        self.assertIn("Substep 1", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
+
+        # Edit F2 title and body
+        r_ed = subprocess.run(
+            [str(SCRIPT), "edit", "F2", "-t", "Renamed second feature", "-m", "updated note", "-b", "Replaced body."],
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_ed.returncode, 0, r_ed.stderr)
+        todo_txt = (self.tmp / "TODO.md").read_text(encoding="utf-8")
+        self.assertIn("### 🔵 [WIP] F2: Renamed second feature — *updated note*", todo_txt)
+        self.assertIn("Replaced body.", todo_txt)
+        self.assertNotIn("Substep 1", todo_txt)
+
+        # Update Resume via stdin
+        r_res = subprocess.run(
+            [str(SCRIPT), "resume"],
+            input="Written 2026-11-13. Updated via CLI.\n",
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_res.returncode, 0, r_res.stderr)
+        self.assertIn("Written 2026-11-13. Updated via CLI.", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
+
+        r_chk = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
+        self.assertEqual(r_chk.returncode, 0, r_chk.stderr)
 
     def test_install_sh(self):
         bin_dir = self.tmp / "bin"
