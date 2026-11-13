@@ -2,7 +2,9 @@
 
 Universal workflow, language, Git, SemVer, Python CLI, and single-file build rules are loaded via `.agents_bundle`.
 
-## Release trigger & local reinstall
+## Architecture & Module Boundaries
 
-- Edit source files under `src/` (`src/*.py`) and run `python3 build.py` to regenerate `./todo_md`.
-- Whenever `src/`, `install.sh`, or `install.ps1` is modified, bump `VERSION` and `VERSION = "..."` in `src/header.py`, run `python3 build.py`, reinstall locally via `sh install.sh --yes >/dev/null`, commit, push to `origin main`, and push annotated tag `vX.Y.Z`.
+- `src/header.py` — CLI usage docstring, standard library imports, version constants, and task heading regexes.
+- `src/parser.py` — `TODO.md`, `TODO_PLAN.md`, and `TODO_ARCHIVE.md` task parser, ID sequence tracking, and structural validator (`todo_md check`).
+- `src/commands.py` — task lifecycle subcommands (`add`, `edit`, `append`, `status`, `activate`, `defer`, `done`, `cancel`, `resume`, `list`, `plan`, `archive`, `ids`) and `todo_md --agents`.
+- `src/cli.py` — CLI argument routing and self-update (`--update`, `--check-update`).
