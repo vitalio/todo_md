@@ -1,6 +1,6 @@
 # `todo_md` — Project-Specific Agent Rules
 
-Universal workflow, language, Git, SemVer, and Python CLI rules are loaded via `$ run_block --agents python-tool`.
+Universal workflow, language, Git, SemVer, and Python CLI rules are loaded via `agents_rules` in `.agents_bundle`.
 
 ## Release trigger & local reinstall
 
