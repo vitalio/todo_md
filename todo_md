@@ -15,7 +15,7 @@
   {prog} cancel <ID> [-m REASON]             Mark task <ID> as CANCELED and move it to TODO_ARCHIVE.md
   {prog} ids                                 Print highest task IDs in use and next available ID per prefix
   {prog} check                               Validate layout, headings, status badges, and unique IDs
-  {prog} init [--force]                      Create starter TODO.md and TODO_ARCHIVE.md
+  {prog} init [TEXT] [--force]               Create starter TODO.md (with optional project idea from TEXT/stdin) and TODO_ARCHIVE.md
   {prog} --agents | agents                   Print Markdown instructions for AI agents
   {prog} update [--force]                    Self-update {prog} from GitHub (vitalio/todo_md)
   {prog} check-update                        Check if a newer version is available on GitHub
@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -371,9 +371,22 @@ def _default_archive_header(base_dir: Path) -> str:
     return ""
 
 
-def cmd_init(base_dir: Path, force: bool = False) -> int:
+def cmd_init(base_dir: Path, argv: list[str] | None = None, force: bool = False) -> int:
+    prog = prog_name()
+    pos: list[str] = []
+    for a in argv or []:
+        if a == "--force":
+            force = True
+        elif a.startswith("-"):
+            raise SystemExit(f"{prog}: unknown option for init: {a}")
+        else:
+            pos.append(a)
+    idea_text = " ".join(pos).strip() if pos else (_read_stdin_if_piped() or "").strip()
+    todo_content = ""
+    if idea_text:
+        todo_content = f"# 🎯 [NEXT] F1: Project concept and initial design\n\n{idea_text}\n"
     templates = {
-        "TODO.md": "",
+        "TODO.md": todo_content,
         "TODO_ARCHIVE.md": "",
     }
     created: list[str] = []
@@ -384,9 +397,9 @@ def cmd_init(base_dir: Path, force: bool = False) -> int:
         p.write_text(content, encoding="utf-8")
         created.append(fname)
     if not created:
-        sys.stdout.write(f"{prog_name()}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
+        sys.stdout.write(f"{prog}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
     else:
-        sys.stdout.write(f"{prog_name()}: initialized {', '.join(created)} in {base_dir}\n")
+        sys.stdout.write(f"{prog}: initialized {', '.join(created)} in {base_dir}\n")
     return 0
 
 
@@ -412,6 +425,7 @@ def agents_markdown(prog: str | None = None) -> str:
         "  - `❌ [CANCELED]` — dropped (`TODO_ARCHIVE.md` only, with reason)",
         f"- **Unique IDs (never split or reuse):** Every `<ID>` (e.g. `F1`) must appear in **at most one** file across `TODO*.md`. Either keep `<ID>` open until 100% done, or close `<ID>` and `{cmd} add` a new ID for follow-up work.",
         f'- **Focused task handoff:** To build a session context bundle (`0.txt`) focused on a single task `<ID>`, run `agents_bundle task=<ID> -p "<task prompt>" [file ...] | run_block`.',
+        f'- **Bootstrap from idea:** Run `{cmd} init "<idea>"` (or pipe idea text on `stdin`) to initialize `TODO.md` with `# 🎯 [NEXT] F1: Project concept and initial design`.',
         "",
         f"### 2. `{cmd}` CLI commands",
         "",
@@ -1015,8 +1029,7 @@ def main(argv: list[str] | None = None) -> int:
     if args[0] in ("check", "--check"):
         return cmd_check(base_dir)
     if args[0] in ("init", "--init"):
-        force = "--force" in args[1:]
-        return cmd_init(base_dir, force=force)
+        return cmd_init(base_dir, argv=args[1:])
     if args[0] in ("list", "--list", "-l"):
         filt = args[1] if len(args) > 1 else None
         return cmd_list(base_dir, filt)

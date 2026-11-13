@@ -154,8 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     if args[0] in ("check", "--check"):
         return cmd_check(base_dir)
     if args[0] in ("init", "--init"):
-        force = "--force" in args[1:]
-        return cmd_init(base_dir, force=force)
+        return cmd_init(base_dir, argv=args[1:])
     if args[0] in ("list", "--list", "-l"):
         filt = args[1] if len(args) > 1 else None
         return cmd_list(base_dir, filt)

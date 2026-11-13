@@ -16,9 +16,22 @@ def _default_archive_header(base_dir: Path) -> str:
     return ""
 
 
-def cmd_init(base_dir: Path, force: bool = False) -> int:
+def cmd_init(base_dir: Path, argv: list[str] | None = None, force: bool = False) -> int:
+    prog = prog_name()
+    pos: list[str] = []
+    for a in argv or []:
+        if a == "--force":
+            force = True
+        elif a.startswith("-"):
+            raise SystemExit(f"{prog}: unknown option for init: {a}")
+        else:
+            pos.append(a)
+    idea_text = " ".join(pos).strip() if pos else (_read_stdin_if_piped() or "").strip()
+    todo_content = ""
+    if idea_text:
+        todo_content = f"# 🎯 [NEXT] F1: Project concept and initial design\n\n{idea_text}\n"
     templates = {
-        "TODO.md": "",
+        "TODO.md": todo_content,
         "TODO_ARCHIVE.md": "",
     }
     created: list[str] = []
@@ -29,9 +42,9 @@ def cmd_init(base_dir: Path, force: bool = False) -> int:
         p.write_text(content, encoding="utf-8")
         created.append(fname)
     if not created:
-        sys.stdout.write(f"{prog_name()}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
+        sys.stdout.write(f"{prog}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
     else:
-        sys.stdout.write(f"{prog_name()}: initialized {', '.join(created)} in {base_dir}\n")
+        sys.stdout.write(f"{prog}: initialized {', '.join(created)} in {base_dir}\n")
     return 0
 
 
@@ -57,6 +70,7 @@ def agents_markdown(prog: str | None = None) -> str:
         "  - `❌ [CANCELED]` — dropped (`TODO_ARCHIVE.md` only, with reason)",
         f"- **Unique IDs (never split or reuse):** Every `<ID>` (e.g. `F1`) must appear in **at most one** file across `TODO*.md`. Either keep `<ID>` open until 100% done, or close `<ID>` and `{cmd} add` a new ID for follow-up work.",
         f'- **Focused task handoff:** To build a session context bundle (`0.txt`) focused on a single task `<ID>`, run `agents_bundle task=<ID> -p "<task prompt>" [file ...] | run_block`.',
+        f'- **Bootstrap from idea:** Run `{cmd} init "<idea>"` (or pipe idea text on `stdin`) to initialize `TODO.md` with `# 🎯 [NEXT] F1: Project concept and initial design`.',
         "",
         f"### 2. `{cmd}` CLI commands",
         "",

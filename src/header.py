@@ -15,7 +15,7 @@
   {prog} cancel <ID> [-m REASON]             Mark task <ID> as CANCELED and move it to TODO_ARCHIVE.md
   {prog} ids                                 Print highest task IDs in use and next available ID per prefix
   {prog} check                               Validate layout, headings, status badges, and unique IDs
-  {prog} init [--force]                      Create starter TODO.md and TODO_ARCHIVE.md
+  {prog} init [TEXT] [--force]               Create starter TODO.md (with optional project idea from TEXT/stdin) and TODO_ARCHIVE.md
   {prog} --agents | agents                   Print Markdown instructions for AI agents
   {prog} update [--force]                    Self-update {prog} from GitHub (vitalio/todo_md)
   {prog} check-update                        Check if a newer version is available on GitHub
@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3

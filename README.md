@@ -56,7 +56,7 @@ todo_md check
 | `todo_md cancel <ID> [-m REASON]` | Mark task `<ID>` as `❌ [CANCELED]` and move it to `TODO_ARCHIVE.md` |
 | `todo_md ids` | Print highest task IDs in use and next free ID per letter prefix |
 | `todo_md check` | Validate task headings, status badges, and unique IDs across `TODO*.md` |
-| `todo_md init [--force]` | Create starter `TODO.md` and `TODO_ARCHIVE.md` |
+| `todo_md init [TEXT] [--force]` | Create starter `TODO.md` (with optional project idea from `TEXT` or `stdin`) and `TODO_ARCHIVE.md` |
 | `todo_md --agents` | Print Markdown instructions for AI agents |
 | `todo_md update [--force]` | Self-update `todo_md` from GitHub (`vitalio/todo_md`) |
 | `todo_md check-update` | Check GitHub for a newer version |

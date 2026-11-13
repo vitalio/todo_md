@@ -90,7 +90,18 @@ class TestTodoMd(unittest.TestCase):
         self.assertEqual(r_chk.returncode, 0, r_chk.stderr)
 
     def test_add_edit_append_cli(self):
-        subprocess.run([str(SCRIPT), "init"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        r_idea = subprocess.run(
+            [str(SCRIPT), "init"],
+            input="Initial project idea from stdin.\n",
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(r_idea.returncode, 0)
+        self.assertIn("# 🎯 [NEXT] F1: Project concept and initial design", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
+        self.assertIn("Initial project idea from stdin.", (self.tmp / "TODO.md").read_text(encoding="utf-8"))
+        subprocess.run([str(SCRIPT), "init", "--force"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
 
         r_add = subprocess.run(
             [str(SCRIPT), "add", "F", "First feature", "--status", "WIP", "-m", "active now"],
