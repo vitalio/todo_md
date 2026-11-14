@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -389,39 +389,14 @@ def agents_markdown(prog: str | None = None) -> str:
     lines = [
         f"## Task management (`{cmd}` v{VERSION}: `TODO.md`, `TODO_ARCHIVE.md`)",
         "",
-        f"Task state lives in two files — modify them via the `{cmd}` CLI rather than manual file edits:",
-        "- `TODO.md` — all open tasks (`# <emoji> [<STATUS>] <ID>: <title>`).",
-        "- `TODO_ARCHIVE.md` — completed (`✅ [DONE]`) and dropped (`❌ [CANCELED]`) tasks.",
+        f"Always inspect and modify `TODO.md` and `TODO_ARCHIVE.md` via `{cmd}` (never via `cat` or manual file edits). **Repository scope only:** record only tasks belonging to the current repository.",
         "",
-        "### 1. Task lifecycle & priority statuses",
-        "",
-        "- **Repository scope only:** Record only tasks belonging to the current repository — never mix in tasks from other repositories worked on in the same chat session.",
-        "- **7 task statuses** (`# <emoji> [<STATUS>] <ID>: <title> — *<optional note>*`):",
-        "  - `🔵 [WIP]` — actively in progress (`TODO.md`, shown in full by default)",
-        "  - `🎯 [NEXT]` — high-priority queue ready to start next (`TODO.md`, shown in full by default)",
-        "  - `⚪ [NEW]` — planned backlog item (`TODO.md`)",
-        "  - `⏸️ [HOLD]` — paused on external dependency (`TODO.md`, with reason)",
-        "  - `❓ [QUESTION]` — blocked on human clarification (`TODO.md`, with question)",
-        "  - `✅ [DONE]` — completed and verified (`TODO_ARCHIVE.md` only, with date and commit SHA)",
-        "  - `❌ [CANCELED]` — dropped (`TODO_ARCHIVE.md` only, with reason)",
-        f"- **Auto-assigned unique IDs (never pass, split, or reuse numbers):** Every `<ID>` (e.g. `F1`, `B1`, `P1`) appears in **at most one** file across `TODO*.md`. When adding a task, pass only the title (or an optional single-letter prefix like `F`, `B`, `P`) — `{cmd} add` automatically assigns and prints the next free ID.",
-        f'- **Bootstrap from idea:** Run `{cmd} init "<idea>"` (or pipe idea text on `stdin`) to initialize `TODO.md` with `# 🎯 [NEXT] F1: Project concept and initial design`.',
-        "",
-        f"### 2. `{cmd}` CLI commands",
-        "",
-        "- **Inspect:**",
-        f"  - `{cmd} [--full]` — print `TODO.md` overview (full `WIP`/`NEXT` tasks + compact backlog) and `IDs in use`",
-        f"  - `{cmd} <ID>` / `{cmd} list [active|archive|all|<STATUS>]` — view full task `<ID>` or compact table",
-        f"  - `{cmd} archive` / `{cmd} ids` — view `TODO_ARCHIVE.md` or next free IDs",
-        "- **Create & edit tasks (body can be passed via `-b TEXT` or `stdin` heredoc):**",
-        f'  - `{cmd} add [<PREFIX>] "<title>" [-p <PREFIX>] [--next] [--status WIP|NEXT|NEW|HOLD|QUESTION] [-m "<note>"] [-b "<body_md>"]` — auto-assigns and prints the new `<ID>` (default prefix `F`; do not pass a number)',
-        f'  - `{cmd} edit <ID> [-t "<title>"] [-m "<note>"] [-b "<body_md>"]` — update title, note, or body of `<ID>`',
-        f'  - `{cmd} append <ID> [-b "<text>"]` — append progress/notes to the end of task `<ID>` body',
-        "- **Transitions & validation:**",
-        f'  - `{cmd} status <ID> <WIP|NEXT|NEW|HOLD|QUESTION> [-m "<note>"]` — update status in place',
-        f'  - `{cmd} next <ID> [-m "<note>"]` — promote `<ID>` to `🎯 [NEXT]` at the top of `TODO.md`',
-        f'  - `{cmd} done <ID> [-m "<commit_sha>"]` / `{cmd} cancel <ID> [-m "<reason>"]` — close and move to `TODO_ARCHIVE.md`',
-        f"  - `{cmd} check` — validate layout, headings, and unique IDs across `TODO.md` and `TODO_ARCHIVE.md`",
+        f"- **Inspect:** `{cmd} [--full]` (overview: full `WIP`/`NEXT` + compact backlog), `{cmd} <ID>`, `{cmd} list [active|archive|all|<STATUS>]`, `{cmd} archive`, `{cmd} ids`",
+        f'- **Create:** `{cmd} add [<PREFIX>] "<title>" [-p <PREFIX>] [--next] [--status WIP|NEXT|NEW|HOLD|QUESTION] [-m "<note>"] [-b "<body_md>"]` (auto-assigns `<ID>`, default prefix `F`; pass body via `-b` or `stdin`; `{cmd} init "<idea>"` bootstraps a new `TODO.md`)',
+        f'- **Update:** `{cmd} edit <ID> [-t "<title>"] [-m "<note>"] [-b "<body_md>"]`, `{cmd} append <ID> [-b "<text>"]`',
+        f'- **Transition:** `{cmd} status <ID> <WIP|NEXT|NEW|HOLD|QUESTION> [-m "<note>"]`, `{cmd} next <ID> [-m "<note>"]` (promote to `🎯 [NEXT]`)',
+        f'- **Close (moves to `TODO_ARCHIVE.md`):** `{cmd} done <ID> [-m "<commit_sha>"]`, `{cmd} cancel <ID> [-m "<reason>"]`',
+        f"- **Validate:** `{cmd} check`",
     ]
     return "\n".join(lines)
 
