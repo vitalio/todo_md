@@ -163,6 +163,41 @@ class TestTodoMd(unittest.TestCase):
         r_chk = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_chk.returncode, 0, r_chk.stderr)
 
+    def test_git_auto_commit_and_no_commit(self):
+        subprocess.run(["git", "init"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Test User"], cwd=str(self.tmp), check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(self.tmp), check=True)
+
+        # Create a staged non-TODO file to verify todo_md commits ONLY TODO*.md
+        other_file = self.tmp / "unrelated.txt"
+        other_file.write_text("unrelated staged work\n", encoding="utf-8")
+        subprocess.run(["git", "add", "unrelated.txt"], cwd=str(self.tmp), check=True)
+
+        r_init = subprocess.run([str(SCRIPT), "init", "Initial idea"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertIn("committed TODO.md, TODO_ARCHIVE.md", r_init.stdout)
+
+        # Verify unrelated.txt is still staged and was NOT included in the todo_md commit
+        r_show = subprocess.run(["git", "show", "--name-only", "--pretty=format:", "HEAD"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        committed_files = r_show.stdout.strip().splitlines()
+        self.assertEqual(committed_files, ["TODO.md", "TODO_ARCHIVE.md"])
+        r_st = subprocess.run(["git", "status", "--porcelain"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertIn("A  unrelated.txt", r_st.stdout)
+
+        # Batch two adds: first with --no-commit, second with default auto-commit
+        r_add1 = subprocess.run([str(SCRIPT), "add", "Task A", "--no-commit"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertNotIn("committed", r_add1.stdout)
+        r_add2 = subprocess.run([str(SCRIPT), "add", "Task B"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertIn("committed TODO.md", r_add2.stdout)
+        self.assertIn("Add task F3: Task B", r_add2.stdout)
+
+        # Done moves task to TODO_ARCHIVE.md and commits both files
+        r_done = subprocess.run([str(SCRIPT), "done", "F2", "-m", "1234567"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertIn("committed TODO.md, TODO_ARCHIVE.md", r_done.stdout)
+        self.assertIn("Complete task F2: Task A", r_done.stdout)
+
+        r_log = subprocess.run(["git", "log", "--oneline"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
+        self.assertEqual(len(r_log.stdout.strip().splitlines()), 3)
+
     def test_install_sh(self):
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir()

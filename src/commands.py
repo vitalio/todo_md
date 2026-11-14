@@ -16,12 +16,82 @@ def _default_archive_header(base_dir: Path) -> str:
     return ""
 
 
-def cmd_init(base_dir: Path, argv: list[str] | None = None, force: bool = False) -> int:
+def _git_commit_todo(base_dir: Path, commit_msg: str) -> None:
+    try:
+        r_wt = subprocess.run(
+            ["git", "-C", str(base_dir), "rev-parse", "--is-inside-work-tree"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return
+    if r_wt.returncode != 0 or r_wt.stdout.strip() != "true":
+        return
+    existing = [f for f in TASK_FILES if (base_dir / f).is_file()]
+    if not existing:
+        return
+    r_add = subprocess.run(
+        ["git", "-C", str(base_dir), "add", "--", *existing],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if r_add.returncode != 0:
+        return
+    r_st = subprocess.run(
+        ["git", "-C", str(base_dir), "status", "--porcelain", "--", *existing],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    if r_st.returncode != 0 or not r_st.stdout.strip():
+        return
+    st_lines = r_st.stdout.splitlines()
+    changed = [f for f in existing if any(line.endswith(f) for line in st_lines)] or existing
+    r_cm = subprocess.run(
+        ["git", "-C", str(base_dir), "commit", "--only", "-m", commit_msg, "--", *existing],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if r_cm.returncode != 0:
+        return
+    r_sha = subprocess.run(
+        ["git", "-C", str(base_dir), "rev-parse", "--short", "HEAD"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    sha = f" ({r_sha.stdout.strip()})" if r_sha.returncode == 0 and r_sha.stdout.strip() else ""
+    sys.stdout.write(f"{prog_name()}: committed {', '.join(changed)}{sha}: {commit_msg}\n")
+
+
+def _finalize_mutation(base_dir: Path, commit_msg: str, no_commit: bool = False) -> int:
+    errors, _ = validate_all(base_dir)
+    if errors:
+        for e in errors:
+            sys.stderr.write(f"ERROR: {e}\n")
+        return 1
+    env_no_commit = os.environ.get("TODO_MD_NO_COMMIT", "").strip().lower() in ("1", "true", "yes")
+    if not no_commit and not env_no_commit:
+        _git_commit_todo(base_dir, commit_msg)
+    return 0
+
+
+def cmd_init(base_dir: Path, argv: list[str] | None = None, force: bool = False, no_commit: bool = False) -> int:
     prog = prog_name()
     pos: list[str] = []
     for a in argv or []:
         if a == "--force":
             force = True
+        elif a == "--no-commit":
+            no_commit = True
         elif a.startswith("-"):
             raise SystemExit(f"{prog}: unknown option for init: {a}")
         else:
@@ -43,15 +113,15 @@ def cmd_init(base_dir: Path, argv: list[str] | None = None, force: bool = False)
         created.append(fname)
     if not created:
         sys.stdout.write(f"{prog}: TODO*.md files already exist in {base_dir} (use --force to overwrite)\n")
-    else:
-        sys.stdout.write(f"{prog}: initialized {', '.join(created)} in {base_dir}\n")
-    return 0
+        return 0
+    sys.stdout.write(f"{prog}: initialized {', '.join(created)} in {base_dir}\n")
+    return _finalize_mutation(base_dir, f"Initialize {' and '.join(created)}", no_commit=no_commit)
 
 
 def agents_markdown(prog: str | None = None) -> str:
     cmd = prog or prog_name()
     lines = [
-        f"## Task management (`{cmd}` v{VERSION}: `TODO.md`, `TODO_ARCHIVE.md`)",
+        f"## Task management (`{cmd}`: `TODO.md`, `TODO_ARCHIVE.md`)",
         "",
         f"Always inspect and modify `TODO.md` and `TODO_ARCHIVE.md` via `{cmd}` (never via `cat` or manual file edits). Repository scope only: record only tasks belonging to the current repository.",
         "",
@@ -60,7 +130,7 @@ def agents_markdown(prog: str | None = None) -> str:
         f'- Update: `{cmd} edit <ID> [-t "<title>"] [-m "<note>"] [-b "<body_md>"]`, `{cmd} append <ID> [-b "<text>"]`',
         f'- Transition: `{cmd} status <ID> <WIP|NEXT|NEW|HOLD|QUESTION> [-m "<note>"]`, `{cmd} next <ID> [-m "<note>"]` (promote to `🎯 [NEXT]`)',
         f'- Close (moves to `TODO_ARCHIVE.md`): `{cmd} done <ID> [-m "<commit_sha>"]`, `{cmd} cancel <ID> [-m "<reason>"]`',
-        f"- Validate: `{cmd} check` (for standalone task-only updates with no code changes, run `{cmd} check`, `git diff TODO*.md`, and `git commit` in one block)",
+        f"- Auto-commit & validate: mutating commands automatically validate and git-commit `TODO*.md` (pass `--no-commit` on earlier commands when batching multiple updates in one block; run `{cmd} check` to validate manually)",
     ]
     return "\n".join(lines)
 
@@ -172,6 +242,7 @@ def cmd_transition(
     dest_file: str | None = None,
     note: str | None = None,
     promote_top: bool = False,
+    no_commit: bool = False,
 ) -> int:
     target = task_id.strip().upper()
     if new_status and new_status not in VALID_STATUSES:
@@ -210,8 +281,19 @@ def cmd_transition(
             if not existing_n:
                 effective_note = today_iso
 
+    tid = str(found["id"])
+    base_title, _ = _strip_heading_note(str(found["title"]))
     sec_lines = list(found["lines"])  # type: ignore[arg-type]
-    sec_lines[0] = _format_heading(final_status, str(found["id"]), str(found["title"]), note=effective_note)
+    sec_lines[0] = _format_heading(final_status, tid, str(found["title"]), note=effective_note)
+
+    if final_status == "DONE":
+        commit_msg = f"Complete task {tid}: {base_title}"
+    elif final_status == "CANCELED":
+        commit_msg = f"Cancel task {tid}: {base_title}"
+    elif promote_top and final_status == "NEXT":
+        commit_msg = f"Promote task {tid} to NEXT: {base_title}"
+    else:
+        commit_msg = f"Mark task {tid} as {final_status}: {base_title}"
 
     if dest_file == source_file and not promote_top:
         src_path = base_dir / source_file
@@ -227,7 +309,7 @@ def cmd_transition(
                     break
         src_path.write_text("\n".join(orig_lines) + "\n", encoding="utf-8")
         sys.stdout.write(f"{prog_name()}: updated {target} -> [{final_status}] in {source_file}\n")
-        return 0
+        return _finalize_mutation(base_dir, commit_msg, no_commit=no_commit)
 
     (base_dir / source_file).write_text(updated_source_text, encoding="utf-8")
     default_hdrs = {
@@ -244,10 +326,10 @@ def cmd_transition(
         sys.stdout.write(f"{prog_name()}: promoted {target} ([{final_status}]) to top of {dest_file}\n")
     else:
         sys.stdout.write(f"{prog_name()}: moved {target} ([{final_status}]) from {source_file} -> {dest_file}\n")
-    return 0
+    return _finalize_mutation(base_dir, commit_msg, no_commit=no_commit)
 
 
-def cmd_add(base_dir: Path, argv: list[str]) -> int:
+def cmd_add(base_dir: Path, argv: list[str], no_commit: bool = False) -> int:
     prog = prog_name()
     status = "NEW"
     prepend = False
@@ -258,7 +340,10 @@ def cmd_add(base_dir: Path, argv: list[str]) -> int:
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--next", "-n", "--top"):
+        if a == "--no-commit":
+            no_commit = True
+            i += 1
+        elif a in ("--next", "-n", "--top"):
             status = "NEXT"
             prepend = True
             i += 1
@@ -329,16 +414,12 @@ def cmd_add(base_dir: Path, argv: list[str]) -> int:
         sec_lines.extend(["", body.strip()])
 
     _insert_task_section(base_dir / "TODO.md", sec_lines, _default_todo_header(base_dir), prepend=prepend)
-    errors, _ = validate_all(base_dir)
-    if errors:
-        for e in errors:
-            sys.stderr.write(f"ERROR: {e}\n")
-        return 1
     sys.stdout.write(f"{prog}: added {tid} ([{status}]) to TODO.md\n")
-    return 0
+    base_title, _ = _strip_heading_note(title)
+    return _finalize_mutation(base_dir, f"Add task {tid}: {base_title}", no_commit=no_commit)
 
 
-def cmd_edit(base_dir: Path, argv: list[str]) -> int:
+def cmd_edit(base_dir: Path, argv: list[str], no_commit: bool = False) -> int:
     prog = prog_name()
     new_title: str | None = None
     note: str | None = None
@@ -348,7 +429,10 @@ def cmd_edit(base_dir: Path, argv: list[str]) -> int:
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in ("-t", "--title"):
+        if a == "--no-commit":
+            no_commit = True
+            i += 1
+        elif a in ("-t", "--title"):
             if i + 1 >= len(argv):
                 raise SystemExit(f"{prog}: {a} requires an argument")
             new_title = argv[i + 1]
@@ -423,26 +507,24 @@ def cmd_edit(base_dir: Path, argv: list[str]) -> int:
         updated_lines = lines[:start_idx] + new_sec + lines[end_idx:]
         new_text = re.sub(r"\n{3,}", "\n\n", "\n".join(updated_lines).rstrip()) + "\n"
         p.write_text(new_text, encoding="utf-8")
-        errors, _ = validate_all(base_dir)
-        if errors:
-            for e in errors:
-                sys.stderr.write(f"ERROR: {e}\n")
-            return 1
         sys.stdout.write(f"{prog}: updated task {tid} in {fname}\n")
-        return 0
+        return _finalize_mutation(base_dir, f"Update task {tid}: {final_title}", no_commit=no_commit)
 
     sys.stderr.write(f"{prog}: task {target!r} not found in TODO*.md under {base_dir}\n")
     return 1
 
 
-def cmd_append(base_dir: Path, argv: list[str]) -> int:
+def cmd_append(base_dir: Path, argv: list[str], no_commit: bool = False) -> int:
     prog = prog_name()
     body: str | None = None
     pos: list[str] = []
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in ("-b", "--body", "-m", "--note"):
+        if a == "--no-commit":
+            no_commit = True
+            i += 1
+        elif a in ("-b", "--body", "-m", "--note"):
             if i + 1 >= len(argv):
                 raise SystemExit(f"{prog}: {a} requires an argument")
             body = argv[i + 1]
@@ -469,6 +551,7 @@ def cmd_append(base_dir: Path, argv: list[str]) -> int:
         in_fence = False
         start_idx: int | None = None
         end_idx: int | None = None
+        matched_title = ""
         for idx, line in enumerate(lines):
             if line.lstrip().startswith(FENCE):
                 in_fence = not in_fence
@@ -479,6 +562,7 @@ def cmd_append(base_dir: Path, argv: list[str]) -> int:
                 m = HEADING_RE.match(line)
                 if m and m.group(3).upper() == target:
                     start_idx = idx
+                    matched_title = m.group(4)
         if start_idx is None:
             continue
         if end_idx is None:
@@ -490,13 +574,9 @@ def cmd_append(base_dir: Path, argv: list[str]) -> int:
         updated_lines = lines[:start_idx] + sec_lines + lines[end_idx:]
         new_text = re.sub(r"\n{3,}", "\n\n", "\n".join(updated_lines).rstrip()) + "\n"
         p.write_text(new_text, encoding="utf-8")
-        errors, _ = validate_all(base_dir)
-        if errors:
-            for e in errors:
-                sys.stderr.write(f"ERROR: {e}\n")
-            return 1
         sys.stdout.write(f"{prog}: appended to {target} in {fname}\n")
-        return 0
+        base_title, _ = _strip_heading_note(matched_title)
+        return _finalize_mutation(base_dir, f"Append to task {target}: {base_title}", no_commit=no_commit)
 
     sys.stderr.write(f"{prog}: task {target!r} not found in TODO*.md under {base_dir}\n")
     return 1

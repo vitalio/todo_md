@@ -22,12 +22,16 @@
   {prog} -V | --version                      Print version and exit 0
   {prog} -h | --help                         Print this usage and exit 0
 
+Mutating commands automatically validate and git-commit TODO*.md when inside a Git repository
+(pass --no-commit to skip committing).
+
 Manages structured Markdown task files in a repository:
   - TODO.md          All open tasks (🔵 [WIP], 🎯 [NEXT], ⚪ [NEW], ⏸️ [HOLD], ❓ [QUESTION])
   - TODO_ARCHIVE.md  Completed (✅ [DONE]) and dropped (❌ [CANCELED]) tasks
 
 Environment variables:
   TODO_MD_CWD          Override target directory (default: current directory or Git root)
+  TODO_MD_NO_COMMIT    Set to 1 to disable automatic git commits on mutating commands
   TODO_MD_UPDATE_URL   Override raw script URL for update / check-update
 """
 from __future__ import annotations

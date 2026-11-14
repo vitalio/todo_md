@@ -108,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
     if "--full" in args:
         full = True
         args = [a for a in args if a != "--full"]
+    no_commit = False
+    if "--no-commit" in args:
+        no_commit = True
+        args = [a for a in args if a != "--no-commit"]
 
     explicit_dir: str | None = None
     if args and args[0] not in KNOWN_SUBCOMMANDS and not args[0].startswith("-") and Path(args[0]).is_dir():
@@ -121,40 +125,40 @@ def main(argv: list[str] | None = None) -> int:
         pos = [p for p in pos if p not in ("--canceled", "--cancel", "--done")]
         if not pos:
             return cmd_archive_view(base_dir)
-        return cmd_transition(base_dir, pos[0], new_status=("CANCELED" if canceled else "DONE"), dest_file="TODO_ARCHIVE.md", note=note)
+        return cmd_transition(base_dir, pos[0], new_status=("CANCELED" if canceled else "DONE"), dest_file="TODO_ARCHIVE.md", note=note, no_commit=no_commit)
     if args[0] in ("add", "--add"):
-        return cmd_add(base_dir, args[1:])
+        return cmd_add(base_dir, args[1:], no_commit=no_commit)
     if args[0] in ("edit", "--edit"):
-        return cmd_edit(base_dir, args[1:])
+        return cmd_edit(base_dir, args[1:], no_commit=no_commit)
     if args[0] in ("append", "--append"):
-        return cmd_append(base_dir, args[1:])
+        return cmd_append(base_dir, args[1:], no_commit=no_commit)
     if args[0] in ("done", "--done"):
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 1:
             raise SystemExit(f"{prog}: usage: {prog} done <ID> [-m NOTE]")
-        return cmd_transition(base_dir, pos[0], new_status="DONE", dest_file="TODO_ARCHIVE.md", note=note)
+        return cmd_transition(base_dir, pos[0], new_status="DONE", dest_file="TODO_ARCHIVE.md", note=note, no_commit=no_commit)
     if args[0] in ("cancel", "canceled", "--cancel"):
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 1:
             raise SystemExit(f"{prog}: usage: {prog} cancel <ID> [-m REASON]")
-        return cmd_transition(base_dir, pos[0], new_status="CANCELED", dest_file="TODO_ARCHIVE.md", note=note)
+        return cmd_transition(base_dir, pos[0], new_status="CANCELED", dest_file="TODO_ARCHIVE.md", note=note, no_commit=no_commit)
     if args[0] in ("status", "--status"):
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 2:
             raise SystemExit(f"{prog}: usage: {prog} status <ID> <STATUS> [-m NOTE]")
         st_up = pos[1].upper()
-        return cmd_transition(base_dir, pos[0], new_status=st_up, dest_file=None, note=note, promote_top=(st_up in ("WIP", "NEXT")))
+        return cmd_transition(base_dir, pos[0], new_status=st_up, dest_file=None, note=note, promote_top=(st_up in ("WIP", "NEXT")), no_commit=no_commit)
     if args[0] in ("next", "top", "--next", "--top"):
         pos, note = _parse_note_arg(args[1:])
         if len(pos) != 1:
             raise SystemExit(f"{prog}: usage: {prog} next <ID> [-m NOTE]")
-        return cmd_transition(base_dir, pos[0], new_status="NEXT", dest_file="TODO.md", note=note, promote_top=True)
+        return cmd_transition(base_dir, pos[0], new_status="NEXT", dest_file="TODO.md", note=note, promote_top=True, no_commit=no_commit)
     if args[0] in ("ids", "--ids"):
         return cmd_ids(base_dir)
     if args[0] in ("check", "--check"):
         return cmd_check(base_dir)
     if args[0] in ("init", "--init"):
-        return cmd_init(base_dir, argv=args[1:])
+        return cmd_init(base_dir, argv=args[1:], no_commit=no_commit)
     if args[0] in ("list", "--list", "-l"):
         filt = args[1] if len(args) > 1 else None
         return cmd_list(base_dir, filt)
