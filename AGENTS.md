@@ -1,6 +1,5 @@
 # `todo_md` — Project-Specific Agent Rules
 
-Universal workflow, language, Git, SemVer, Python CLI, and single-file build rules are loaded via `.agents_bundle`.
 
 ## Architecture & Module Boundaries
 

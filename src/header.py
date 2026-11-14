@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3

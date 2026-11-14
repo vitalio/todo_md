@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3
@@ -405,7 +405,6 @@ def agents_markdown(prog: str | None = None) -> str:
         "  - `✅ [DONE]` — completed and verified (`TODO_ARCHIVE.md` only, with date and commit SHA)",
         "  - `❌ [CANCELED]` — dropped (`TODO_ARCHIVE.md` only, with reason)",
         f"- **Auto-assigned unique IDs (never pass, split, or reuse numbers):** Every `<ID>` (e.g. `F1`, `B1`, `P1`) appears in **at most one** file across `TODO*.md`. When adding a task, pass only the title (or an optional single-letter prefix like `F`, `B`, `P`) — `{cmd} add` automatically assigns and prints the next free ID.",
-        f'- **Focused task handoff:** To build a session context bundle (`0.txt`) focused on a single task `<ID>`, run `agents_bundle task=<ID> -p "<task prompt>" [file ...] | run_block`.',
         f'- **Bootstrap from idea:** Run `{cmd} init "<idea>"` (or pipe idea text on `stdin`) to initialize `TODO.md` with `# 🎯 [NEXT] F1: Project concept and initial design`.',
         "",
         f"### 2. `{cmd}` CLI commands",
