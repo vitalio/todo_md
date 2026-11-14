@@ -47,7 +47,7 @@ todo_md check
 | `todo_md <ID>` / `todo_md show <ID>` | Show full Markdown section for task `<ID>` across `TODO*.md` |
 | `todo_md list [filter]` | List tasks (`active`, `archive`, `all`, or status like `WIP`, `NEXT`, `HOLD`) |
 | `todo_md archive [<ID>] [-m NOTE]` | Print `TODO_ARCHIVE.md`, or archive task `<ID>` to `TODO_ARCHIVE.md` |
-| `todo_md add [<ID\|PREFIX>] <TITLE> [opts]` | Add a new task (`--next`, `--status STATUS`, `-m NOTE`, `-b BODY` or `stdin`) |
+| `todo_md add [<PREFIX>] <TITLE> [opts]` | Add a new task with auto-assigned ID (`-p PREFIX`, `--next`, `--status STATUS`, `-m NOTE`, `-b BODY` or `stdin`) |
 | `todo_md edit <ID> [opts]` | Update task title, note, or body (`-t TITLE`, `-m NOTE`, `-b BODY` or `stdin`) |
 | `todo_md append <ID> [-b TEXT]` | Append progress/notes to task `<ID>` body (`-b TEXT` or `stdin`) |
 | `todo_md status <ID> <STATUS> [-m N]` | Update task status (`WIP`, `NEXT`, `NEW`, `HOLD`, `QUESTION`, `DONE`, `CANCELED`) |

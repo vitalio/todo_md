@@ -5,8 +5,8 @@
   {prog} <ID> | show <ID>                    Show full section for task <ID> across TODO.md and TODO_ARCHIVE.md
   {prog} list [filter]                       Compact task table (active | archive | all | <STATUS>)
   {prog} archive [<ID>] [-m NOTE]            Print TODO_ARCHIVE.md, or archive task <ID>
-  {prog} add [<ID|PREFIX>] <TITLE> [opts]    Add a new task to TODO.md (reads body from -b TEXT or stdin)
-                                             Opts: --next, --status STATUS, -m NOTE, -b BODY
+  {prog} add [<PREFIX>] <TITLE> [opts]       Add a new task with auto-assigned ID (reads body from -b TEXT or stdin)
+                                             Opts: -p PREFIX (default: F), --next, --status STATUS, -m NOTE, -b BODY
   {prog} edit <ID> [opts]                    Update task title, note, or body (-t TITLE, -m NOTE, -b BODY or stdin)
   {prog} append <ID> [-b TEXT]               Append text to task <ID> body (from -b TEXT or stdin)
   {prog} status <ID> <STATUS> [-m NOTE]      Update status of <ID> (WIP|NEXT|NEW|HOLD|QUESTION|DONE|CANCELED)
@@ -44,7 +44,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 REPO_MARKER = "todo_md-repo: vitalio/todo_md"
 DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/vitalio/todo_md/main/todo_md"
 FENCE = chr(96) * 3

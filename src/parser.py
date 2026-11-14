@@ -108,25 +108,6 @@ def highest_ids_in_use(base_dir: Path) -> dict[str, int]:
     return top
 
 
-def all_used_ids(base_dir: Path) -> set[str]:
-    used: set[str] = set()
-    for fname in TASK_FILES:
-        text = read_if_exists(base_dir / fname)
-        if not text:
-            continue
-        in_fence = False
-        for line in text.splitlines():
-            if line.lstrip().startswith(FENCE):
-                in_fence = not in_fence
-                continue
-            if in_fence:
-                continue
-            m = ANY_ID_RE.match(line)
-            if m:
-                used.add(m.group(1).upper())
-    return used
-
-
 def next_free_id(base_dir: Path, prefix: str = "F") -> str:
     p = prefix.upper()
     if not re.fullmatch(r"[A-Za-z]", p):

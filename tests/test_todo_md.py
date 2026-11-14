@@ -54,11 +54,11 @@ class TestTodoMd(unittest.TestCase):
         self.assertFalse((self.tmp / "TODO_PLAN.md").exists())
         self.assertTrue((self.tmp / "TODO_ARCHIVE.md").is_file())
 
-        # Add 6 tasks; task P1 has a multi-line body
+        # Add 6 tasks using prefix / default auto-numbering; task P1 has a multi-line body
         long_body = "\n".join(f"Detail line {i}" for i in range(1, 10))
-        subprocess.run([str(SCRIPT), "add", "P1", "Long backlog item", "-b", long_body], cwd=str(self.tmp), check=True)
+        subprocess.run([str(SCRIPT), "add", "P", "Long backlog item", "-b", long_body], cwd=str(self.tmp), capture_output=True, text=True, check=True)
         for idx in range(1, 6):
-            subprocess.run([str(SCRIPT), "add", f"F{idx}", f"Feature {idx}", "-b", f"Body {idx}"], cwd=str(self.tmp), check=True)
+            subprocess.run([str(SCRIPT), "add", f"Feature {idx}", "-b", f"Body {idx}"], cwd=str(self.tmp), capture_output=True, text=True, check=True)
 
         # Promote F3 to NEXT priority
         r_nxt = subprocess.run([str(SCRIPT), "next", "F3", "-m", "top priority"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
@@ -136,6 +136,29 @@ class TestTodoMd(unittest.TestCase):
         todo_txt = (self.tmp / "TODO.md").read_text(encoding="utf-8")
         self.assertIn("# 🔵 [WIP] F1: Renamed feature — *updated note*", todo_txt)
         self.assertIn("Replaced body.", todo_txt)
+
+        # Passing an already-used explicit ID (e.g. F1) auto-assigns next free ID (F2) without failing
+        r_dup = subprocess.run(
+            [str(SCRIPT), "add", "F1", "Second feature auto-numbered"],
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_dup.returncode, 0, r_dup.stderr)
+        self.assertIn("added F2", r_dup.stdout)
+        self.assertIn("ignoring explicit ID F1; auto-assigned F2", r_dup.stderr)
+
+        # -p / --prefix flag assigns next free ID for that prefix
+        r_pfx = subprocess.run(
+            [str(SCRIPT), "add", "-p", "B", "Bugfix task"],
+            cwd=str(self.tmp),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r_pfx.returncode, 0, r_pfx.stderr)
+        self.assertIn("added B1", r_pfx.stdout)
 
         r_chk = subprocess.run([str(SCRIPT), "check"], cwd=str(self.tmp), capture_output=True, text=True, check=False)
         self.assertEqual(r_chk.returncode, 0, r_chk.stderr)

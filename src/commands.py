@@ -68,7 +68,7 @@ def agents_markdown(prog: str | None = None) -> str:
         "  - `❓ [QUESTION]` — blocked on human clarification (`TODO.md`, with question)",
         "  - `✅ [DONE]` — completed and verified (`TODO_ARCHIVE.md` only, with date and commit SHA)",
         "  - `❌ [CANCELED]` — dropped (`TODO_ARCHIVE.md` only, with reason)",
-        f"- **Unique IDs (never split or reuse):** Every `<ID>` (e.g. `F1`) must appear in **at most one** file across `TODO*.md`. Either keep `<ID>` open until 100% done, or close `<ID>` and `{cmd} add` a new ID for follow-up work.",
+        f"- **Auto-assigned unique IDs (never pass, split, or reuse numbers):** Every `<ID>` (e.g. `F1`, `B1`, `P1`) appears in **at most one** file across `TODO*.md`. When adding a task, pass only the title (or an optional single-letter prefix like `F`, `B`, `P`) — `{cmd} add` automatically assigns and prints the next free ID.",
         f'- **Focused task handoff:** To build a session context bundle (`0.txt`) focused on a single task `<ID>`, run `agents_bundle task=<ID> -p "<task prompt>" [file ...] | run_block`.',
         f'- **Bootstrap from idea:** Run `{cmd} init "<idea>"` (or pipe idea text on `stdin`) to initialize `TODO.md` with `# 🎯 [NEXT] F1: Project concept and initial design`.',
         "",
@@ -79,7 +79,7 @@ def agents_markdown(prog: str | None = None) -> str:
         f"  - `{cmd} <ID>` / `{cmd} list [active|archive|all|<STATUS>]` — view full task `<ID>` or compact table",
         f"  - `{cmd} archive` / `{cmd} ids` — view `TODO_ARCHIVE.md` or next free IDs",
         "- **Create & edit tasks (body can be passed via `-b TEXT` or `stdin` heredoc):**",
-        f'  - `{cmd} add [<ID|PREFIX>] "<title>" [--next] [--status WIP|NEXT|NEW|HOLD|QUESTION] [-m "<note>"] [-b "<body_md>"]`',
+        f'  - `{cmd} add [<PREFIX>] "<title>" [-p <PREFIX>] [--next] [--status WIP|NEXT|NEW|HOLD|QUESTION] [-m "<note>"] [-b "<body_md>"]` — auto-assigns and prints the new `<ID>` (default prefix `F`; do not pass a number)',
         f'  - `{cmd} edit <ID> [-t "<title>"] [-m "<note>"] [-b "<body_md>"]` — update title, note, or body of `<ID>`',
         f'  - `{cmd} append <ID> [-b "<text>"]` — append progress/notes to the end of task `<ID>` body',
         "- **Transitions & validation:**",
@@ -277,6 +277,7 @@ def cmd_add(base_dir: Path, argv: list[str]) -> int:
     prog = prog_name()
     status = "NEW"
     prepend = False
+    prefix: str | None = None
     note: str | None = None
     body: str | None = None
     pos: list[str] = []
@@ -287,6 +288,13 @@ def cmd_add(base_dir: Path, argv: list[str]) -> int:
             status = "NEXT"
             prepend = True
             i += 1
+        elif a in ("-p", "--prefix"):
+            if i + 1 >= len(argv):
+                raise SystemExit(f"{prog}: {a} requires an argument")
+            prefix = argv[i + 1].strip().upper()
+            if not re.fullmatch(r"[A-Z]", prefix):
+                raise SystemExit(f"{prog}: invalid ID prefix {argv[i + 1]!r}; expected a single letter A-Z")
+            i += 2
         elif a in ("--status", "-s"):
             if i + 1 >= len(argv):
                 raise SystemExit(f"{prog}: {a} requires an argument")
@@ -314,27 +322,29 @@ def cmd_add(base_dir: Path, argv: list[str]) -> int:
         raise SystemExit(f"{prog}: add status must be WIP, NEXT, NEW, HOLD, or QUESTION (got {status!r})")
 
     if len(pos) == 1:
-        tid = next_free_id(base_dir, "F")
+        tid = next_free_id(base_dir, prefix or "F")
         title = pos[0].strip()
-    elif len(pos) == 2:
+    elif len(pos) == 2 and prefix is None:
         first, second = pos[0].strip(), pos[1].strip()
         if re.fullmatch(r"[A-Za-z]", first):
             tid = next_free_id(base_dir, first.upper())
             title = second
         elif re.fullmatch(r"[A-Za-z]\d+", first):
-            tid = first.upper()
+            tid = next_free_id(base_dir, first[0].upper())
             title = second
+            if first.upper() != tid:
+                sys.stderr.write(
+                    f"{prog}: note: ignoring explicit ID {first.upper()}; auto-assigned {tid}\n"
+                )
         else:
-            raise SystemExit(f"{prog}: invalid task ID or prefix {first!r}; expected e.g. F or F4")
+            raise SystemExit(f"{prog}: invalid ID prefix {first!r}; expected a single letter A-Z (e.g. F, B, P)")
     else:
-        raise SystemExit(f"{prog}: usage: {prog} add [<ID|PREFIX>] <TITLE> [--next] [--status STATUS] [-m NOTE] [-b BODY]")
+        raise SystemExit(
+            f"{prog}: usage: {prog} add [<PREFIX>] <TITLE> [-p PREFIX] [--next] [--status STATUS] [-m NOTE] [-b BODY]"
+        )
 
     if not title:
         raise SystemExit(f"{prog}: task title cannot be empty")
-
-    used = all_used_ids(base_dir)
-    if tid in used:
-        raise SystemExit(f"{prog}: task ID {tid} is already in use (next free for {tid[0]}: {next_free_id(base_dir, tid[0])})")
 
     if body is None:
         body = _read_stdin_if_piped()
