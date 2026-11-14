@@ -60,7 +60,7 @@ def agents_markdown(prog: str | None = None) -> str:
         f'- Update: `{cmd} edit <ID> [-t "<title>"] [-m "<note>"] [-b "<body_md>"]`, `{cmd} append <ID> [-b "<text>"]`',
         f'- Transition: `{cmd} status <ID> <WIP|NEXT|NEW|HOLD|QUESTION> [-m "<note>"]`, `{cmd} next <ID> [-m "<note>"]` (promote to `🎯 [NEXT]`)',
         f'- Close (moves to `TODO_ARCHIVE.md`): `{cmd} done <ID> [-m "<commit_sha>"]`, `{cmd} cancel <ID> [-m "<reason>"]`',
-        f"- Validate: `{cmd} check`",
+        f"- Validate: `{cmd} check` (for standalone task-only updates with no code changes, run `{cmd} check`, `git diff TODO*.md`, and `git commit` in one block)",
     ]
     return "\n".join(lines)
 
