@@ -26,10 +26,14 @@ MODULE_ORDER = [
 
 
 def assemble_source() -> str:
+    ver = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     chunks: list[str] = []
     for item in MODULE_ORDER:
         mod_path = SRC_DIR / item
-        chunks.append(mod_path.read_text(encoding="utf-8").rstrip())
+        txt = mod_path.read_text(encoding="utf-8").rstrip()
+        if item == "header.py":
+            txt = txt.replace('VERSION = "__VERSION__"', f'VERSION = "{ver}"')
+        chunks.append(txt)
     source = "\n\n\n".join(chunks) + "\n"
     ast.parse(source)
     return source
